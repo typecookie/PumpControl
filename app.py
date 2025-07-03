@@ -4,8 +4,10 @@ import RPi.GPIO as GPIO
 import threading
 import atexit
 import time
+import json
+import os
 
-# GPIO Pin Definitions
+# First, define the GPIO Pin Definitions
 WELL_PUMP = 17
 DIST_PUMP = 18
 SUMMER_HIGH = 22
@@ -21,10 +23,36 @@ MODES = {
     'CHANGEOVER': 'Changeover Mode'
 }
 
+# Configuration settings
+CONFIG_FILE = 'pump_config.json'
+DEFAULT_CONFIG = {
+    'current_mode': 'SUMMER'
+}
+
+def save_config(config):
+    """Save configuration to file"""
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f)
+    except Exception as e:
+        print(f"Error saving config: {e}")
+
+def load_config():
+    """Load configuration from file"""
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading config: {e}")
+    return DEFAULT_CONFIG.copy()
+
 # Global Variables
-current_mode = 'SUMMER'
+config = load_config()
+current_mode = config.get('current_mode', 'SUMMER')
 gpio_initialized = False
 pump_thread = None
+manual_pump_running = False
 
 class TankState:
     def __init__(self, name):
@@ -137,31 +165,45 @@ def control_pumps():
         try:
             update_tank_states()  # Update tank states
             
-            # Summer mode pump control logic
+            # Add mode change logging
+            print(f"Current mode: {current_mode}")  # Add this line
+            
             if current_mode == 'SUMMER':
                 if summer_tank.state in ['EMPTY', 'LOW']:
-                    # Start pump when tank is low or empty
                     pump_running = True
                 elif summer_tank.state == 'HIGH':
-                    # Stop pump when tank is full
                     pump_running = False
-                # MID state: keep previous pump state (hysteresis)
                 
-                # Set pump state based on running flag
                 GPIO.output(WELL_PUMP, GPIO.HIGH if pump_running else GPIO.LOW)
-                print(f"Summer tank {summer_tank.state} - Well pump {'ON' if pump_running else 'OFF'}")
+                print(f"Summer mode: {summer_tank.state} - Well pump {'ON' if pump_running else 'OFF'}")
                 
-                if summer_tank.state == 'ERROR':
-                    # Safety measure: turn off pump if there's an error
+            elif current_mode == 'WINTER':
+                if winter_tank.state == 'LOW':
+                    pump_running = True
+                elif winter_tank.state == 'HIGH':
                     pump_running = False
+                
+                GPIO.output(WELL_PUMP, GPIO.HIGH if pump_running else GPIO.LOW)
+                print(f"Winter mode: {winter_tank.state} - Well pump {'ON' if pump_running else 'OFF'}")
+                
+            elif current_mode == 'CHANGEOVER':
+                # In changeover mode, pump control is manual only
+                print(f"Changeover mode - Manual control only")
+                print(f"Summer tank: {summer_tank.state}, Winter tank: {winter_tank.state}")
+                if not manual_pump_running:
                     GPIO.output(WELL_PUMP, GPIO.LOW)
-                    print("Summer tank error state - Well pump OFF for safety")
+                # Note: Well pump in changeover mode is controlled by manual_pump endpoint
+                
+            # Safety check for errors in any mode
+            if (summer_tank.state == 'ERROR' or winter_tank.state == 'ERROR'):
+                pump_running = False
+                GPIO.output(WELL_PUMP, GPIO.LOW)
+                print(f"Tank error state detected - Well pump OFF for safety")
             
             time.sleep(1)  # Check every second
             
         except Exception as e:
             print(f"Error in control_pumps: {e}")
-            # Safety measure: turn off pumps on error
             pump_running = False
             GPIO.output(WELL_PUMP, GPIO.LOW)
             GPIO.output(DIST_PUMP, GPIO.LOW)
@@ -172,7 +214,10 @@ def create_app():
     app.config['TEMPLATES_AUTO_RELOAD'] = True
     
     # Initialize the pump thread during app creation
-    global pump_thread
+    global pump_thread, current_mode
+    config = load_config()
+    current_mode = config.get('current_mode', 'SUMMER')
+    
     if pump_thread is None or not pump_thread.is_alive():
         initialize_gpio()
         pump_thread = threading.Thread(target=control_pumps, daemon=True)
@@ -263,11 +308,15 @@ def create_app():
             new_mode = request.json.get('mode')
             confirm = request.json.get('confirm', False)
             
+            print(f"Mode change request received - New mode: {new_mode}, Confirm: {confirm}")
+            
             if new_mode not in MODES:
+                print(f"Invalid mode requested: {new_mode}")
                 return jsonify({'error': 'Invalid mode'}), 400
             
             if not confirm:
                 mode_change_requested = new_mode
+                print(f"Awaiting confirmation for mode change to: {MODES[new_mode]}")
                 return jsonify({
                     'status': 'confirmation_required',
                     'message': f'Confirm changing mode to {MODES[new_mode]}?'
@@ -276,8 +325,14 @@ def create_app():
             current_mode = new_mode
             mode_change_requested = None
             
+            # Save the new mode to config file
+            config['current_mode'] = current_mode
+            save_config(config)
+            
             GPIO.output(WELL_PUMP, GPIO.LOW)
             GPIO.output(DIST_PUMP, GPIO.LOW)
+            
+            print(f"Mode successfully changed to: {MODES[new_mode]}")
             
             return jsonify({
                 'status': 'success',
@@ -351,10 +406,45 @@ def create_app():
                 'error': str(e)
             })
 
+    @app.route('/api/manual_pump', methods=['POST'])
+    def manual_pump():
+        global manual_pump_running
+        try:
+            manual_pump_running = request.json.get('running', False)
+            if current_mode == 'CHANGEOVER':
+                GPIO.output(WELL_PUMP, GPIO.HIGH if manual_pump_running else GPIO.LOW)
+                return jsonify({
+                    'status': 'success',
+                    'pump_running': manual_pump_running
+                })
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Manual pump control only available in CHANGEOVER mode'
+                }), 400
+        except Exception as e:
+            print(f"Error in manual_pump: {e}")
+            return jsonify({'error': str(e)}), 500
+
     return app
 
 # Create the application instance
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Force disable Flask's development features
+    import os
+    os.environ['FLASK_ENV'] = 'production'
+    os.environ['WERKZEUG_RUN_MAIN'] = 'true'
+    
+    print(f"Starting server on 0.0.0.0:5000... (Current mode: {current_mode})")
+    # Explicitly bind to all interfaces
+    from werkzeug.serving import WSGIServer
+    http_server = WSGIServer(('0.0.0.0', 5000), app)
+    try:
+        print("Server is ready to accept connections")
+        http_server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        # Save final state before shutdown
+        save_config(config)
