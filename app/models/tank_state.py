@@ -1,4 +1,5 @@
-# app/models/tank_state.py
+from app.utils.stats_manager import StatsManager  # Changed from stats_manager to status_manager
+
 class TankState:
     def __init__(self, name):
         self.name = name
@@ -11,28 +12,32 @@ class TankState:
             'month_runtime': 0,
             'month_gallons': 0
         }
+        self._load_stats()
+    
+    def _load_stats(self):
+        """Load saved statistics"""
+        summer_stats, winter_stats = StatsManager.load_stats()
+        if self.name == 'Summer':
+            if summer_stats:  # Add null check
+                self.stats.update(summer_stats)
+        elif self.name == 'Winter':
+            if winter_stats:  # Add null check
+                self.stats.update(winter_stats)
+
+    def save_stats(self):
+        """Save current statistics"""
+        if self.name == 'Summer':
+            StatsManager.save_stats(self.stats, None)
+        elif self.name == 'Winter':
+            StatsManager.save_stats(None, self.stats)
     
     def update_stats(self, pump_running):
         """Update runtime statistics when pump is running"""
         if pump_running:
             self.stats['today_runtime'] += 1
-            self.stats['today_gallons'] += 1  # Assuming 1 gallon per second
+            self.stats['today_gallons'] += 1
             self.stats['week_runtime'] += 1
             self.stats['week_gallons'] += 1
             self.stats['month_runtime'] += 1
             self.stats['month_gallons'] += 1
-
-    def reset_daily_stats(self):
-        """Reset daily statistics"""
-        self.stats['today_runtime'] = 0
-        self.stats['today_gallons'] = 0
-
-    def reset_weekly_stats(self):
-        """Reset weekly statistics"""
-        self.stats['week_runtime'] = 0
-        self.stats['week_gallons'] = 0
-
-    def reset_monthly_stats(self):
-        """Reset monthly statistics"""
-        self.stats['month_runtime'] = 0
-        self.stats['month_gallons'] = 0
+            self.save_stats()  # Save stats after updating

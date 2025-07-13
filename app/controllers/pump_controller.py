@@ -1,3 +1,44 @@
+from app.controllers import Controller
+from app.utils.config_utils import ConfigManager
+from app.models.tank_state import TankState
+from app.controllers.gpio_controller import GPIOController
+import threading
+
+class PumpController(Controller):
+    def _init(self):
+        """Initialize pump controller"""
+        self.config = ConfigManager.load_config()
+        self.current_mode = self.config.get('current_mode', 'SUMMER')
+        self.manual_pump_running = False
+        self.pump_thread = None
+        self.running = False
+        self.mode_change_requested = None
+        
+        # Initialize tanks
+        self.summer_tank = TankState('Summer')
+        self.winter_tank = TankState('Winter')
+        
+        # Get GPIO controller instance
+        self.gpio = GPIOController.get_instance()
+    
+    def start(self):
+        """Start the pump controller thread"""
+        if not self.running:
+            self.running = True
+            self.pump_thread = threading.Thread(target=self._pump_control_loop)
+            self.pump_thread.daemon = True
+            self.pump_thread.start()
+    
+    def stop(self):
+        """Stop the pump controller"""
+        self.running = False
+        if self.pump_thread:
+            self.pump_thread.join()
+    
+    def cleanup(self):
+        """Clean up resources"""
+        self.stop()
+        self.save_current_state()
 # app/controllers/pump_controller.py
 import threading
 import time
@@ -273,3 +314,11 @@ class PumpController:
     def is_running(self):
         """Check if pump controller is running"""
         return self.running and (self.pump_thread and self.pump_thread.is_alive())
+
+    def cleanup(self):
+        """Clean up before shutdown"""
+        if self.summer_tank:
+            self.summer_tank.save_stats()
+        if self.winter_tank:
+            self.winter_tank.save_stats()
+        self.stop()

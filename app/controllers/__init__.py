@@ -1,25 +1,11 @@
-# app/controllers/__init__.py
+from .base_controller import Controller
+from .pump_controller import PumpController
+from .mode_controller import ModeController
 
-class Controller:
-    _instances = {}
-    
-    @classmethod
-    def get_instance(cls):
-        if cls not in cls._instances:
-            cls._instances[cls] = cls()
-        return cls._instances[cls]
-    
-    @classmethod
-    def initialize_all(cls):
-        """Initialize all controllers"""
-        from .pump_controller import PumpController
-        
-        # Initialize each controller
-        PumpController.get_instance().start()
-    
-    @classmethod
-    def cleanup_all(cls):
-        """Cleanup all controllers"""
-        for controller in cls._instances.values():
-            if hasattr(controller, 'stop'):
-                controller.stop()
+
+__all__ = [
+    'Controller',
+    'PumpController',
+    'ModeController',
+
+]

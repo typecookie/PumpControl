@@ -1,6 +1,6 @@
-# app/controllers/gpio_controller.py
 from RPi import GPIO
 
+from app.controllers import Controller
 from app.utils.gpio_utils import GPIOManager
 from app.config import (
     SUMMER_HIGH, SUMMER_LOW, SUMMER_EMPTY,
@@ -8,20 +8,15 @@ from app.config import (
     WELL_PUMP, DIST_PUMP
 )
 
-class GPIOController:
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(GPIOController, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
+class GPIOController(Controller):
+    def _init(self):
+        """Initialize GPIO controller"""
         self.gpio_manager = GPIOManager()
+        GPIOManager.initialize()
+    
+    def cleanup(self):
+        """Clean up GPIO resources"""
+        self.gpio_manager.cleanup()
 
     def get_tank_states(self):
         """Get all tank sensor states"""
