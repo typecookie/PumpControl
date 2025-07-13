@@ -1,25 +1,18 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Water Tank Control System</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .tank-card {
-            margin: 10px;
-            padding: 15px;
-        }
-        .pump-status {
-            font-weight: bold;
-        }
-        .mode-button {
-            margin: 5px;
-        }
-        .active-mode {
-            border: 2px solid #28a745; !important;
-        }
-    </style>
+    <!-- Custom CSS -->
+    <link href="{{ url_for('static', filename='css/main.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/components/tanks.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/components/pumps.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/components/modes.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/components/gpio.css') }}" rel="stylesheet">
 </head>
+
 <body>
     <div class="container mt-4">
         <h1 class="text-center mb-4">Water Tank Control System</h1>
@@ -33,7 +26,7 @@
                 <div class="d-flex justify-content-center">
                     {% for mode_key, mode_name in available_modes.items() %}
                     <button class="btn btn-outline-primary mode-button {% if mode_key == current_mode %}active-mode{% endif %}"
-                            onclick="changeMode('{{ mode_key }}')">
+                        data-mode="{{ mode_key }}">
                         {{ mode_name }}
                     </button>
                     {% endfor %}
@@ -41,55 +34,56 @@
             </div>
         </div>
 
-<!-- First, modify the tank cards to be hideable -->
-<div class="row">
-    <!-- Summer Tank Card -->
-    <div class="col-md-6" id="summer-tank-section">
-        <div class="card tank-card">
-            <div class="card-header">
-                <h4>Summer Tank</h4>
-            </div>
-            <div class="card-body">
-                <p>State: <span id="summer-state">{{ summer_tank_state }}</span></p>
-                <div id="summer-stats"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Winter Tank Card -->
-    <div class="col-md-6" id="winter-tank-section">
-        <div class="card tank-card">
-            <div class="card-header">
-                <h4>Winter Tank</h4>
-            </div>
-            <div class="card-body">
-                <p>State: <span id="winter-state">{{ winter_tank_state }}</span></p>
-                <div id="winter-stats"></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Add Changeover Mode Manual Control -->
-<div class="card mt-4" id="changeover-controls" style="display: none;">
-    <div class="card-header">
-        <h4>Changeover Mode - Well Pump Manual Control</h4>
-    </div>
-    <div class="card-body">
+        <!-- First, modify the tank cards to be hideable -->
         <div class="row">
-            <div class="col-md-12">
-                <p class="text-info mb-3">
-                    <i class="bi bi-info-circle"></i> 
-                    This control allows manual operation of the well pump during changeover mode.
-                </p>
-                <button id="manual-pump-toggle" class="btn btn-primary">
-                    Start Well Pump
-                </button>
-                <p class="mt-2">Well Pump Manual Control Status: <span id="manual-pump-status" class="fw-bold">OFF</span></p>
+            <!-- Summer Tank Card -->
+            <div class="col-md-6" id="summer-tank-section">
+                <div class="card tank-card">
+                    <div class="card-header">
+                        <h4>Summer Tank</h4>
+                    </div>
+                    <div class="card-body">
+                        <p>State: <span id="summer-state">{{ summer_tank_state }}</span></p>
+                        <div id="summer-stats"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Winter Tank Card -->
+            <div class="col-md-6" id="winter-tank-section">
+                <div class="card tank-card">
+                    <div class="card-header">
+                        <h4>Winter Tank</h4>
+                    </div>
+                    <div class="card-body">
+                        <p>State: <span id="winter-state">{{ winter_tank_state }}</span></p>
+                        <div id="winter-stats"></div>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
-</div>
+
+        <!-- Add Changeover Mode Manual Control -->
+        <div class="card mt-4" id="changeover-controls" style="display: none;">
+            <div class="card-header">
+                <h4>Changeover Mode - Well Pump Manual Control</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-12">
+                        <p class="text-info mb-3">
+                            <i class="bi bi-info-circle"></i>
+                            This control allows manual operation of the well pump during changeover mode.
+                        </p>
+                        <button id="manual-pump-toggle" class="btn btn-primary pump-control-button">
+                            Start Well Pump
+                        </button>
+                        <p class="mt-2">Well Pump Manual Control Status: <span id="manual-pump-status"
+                                class="fw-bold">OFF</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Pump Status Card -->
         <div class="card mt-4">
@@ -98,6 +92,8 @@
             </div>
             <div class="card-body">
                 <p>Well Pump: <span id="well-pump-status" class="pump-status">{{ well_pump_status }}</span></p>
+                <img id="well-pump-image" src="{{ url_for('static', filename='img/pump_off.jpg') }}"
+                    alt="Well Pump Status" class="img-fluid pump-status-image">
                 <p>Distribution Pump: <span id="dist-pump-status" class="pump-status">{{ dist_pump_status }}</span></p>
             </div>
         </div>
@@ -111,7 +107,9 @@
                 <div class="row">
                     <div class="col-md-4">
                         <h5>Summer Tank Sensors</h5>
-                        <div id="summer-gpio-states"></div>
+                        <div id="summer-gpio-states" class="gpio-states">
+                            <!-- content -->
+                        </div>
                     </div>
                     <div class="col-md-4">
                         <h5>Winter Tank Sensors</h5>
@@ -158,253 +156,10 @@
         </div>
     </div>
 
+    <!-- Keep the Bootstrap script -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-<!-- Update the JavaScript section -->
-<script>
-    let selectedMode = null;
-    let lastModeChange = 'Not changed yet';
-    let modeChangeStatus = 'No changes made';
-    const modal = new bootstrap.Modal(document.getElementById('modeConfirmModal'));
-
-    // Helper function to format stats
-    function formatStats(stats) {
-        return `
-            <p>Today's Runtime: ${stats.today_runtime}</p>
-            <p>Today's Gallons: ${stats.today_gallons}</p>
-            <p>Week Runtime: ${stats.week_runtime}</p>
-            <p>Week Gallons: ${stats.week_gallons}</p>
-            <p>Month Runtime: ${stats.month_runtime}</p>
-            <p>Month Gallons: ${stats.month_gallons}</p>
-        `;
-    }
-
-    function updateModeDebug() {
-        const currentMode = document.getElementById('current-mode').textContent || 'Unknown';
-        document.getElementById('debug-current-mode').textContent = currentMode;
-        document.getElementById('debug-last-mode-change').textContent = lastModeChange;
-        document.getElementById('debug-mode-change-status').textContent = modeChangeStatus;
-    }
-
-    function updateState() {
-        fetch('/api/state')
-            .then(response => response.json())
-            .then(data => {
-                console.log('State update received:', data);
-                
-                document.getElementById('current-mode').textContent = data.current_mode;
-                
-                // Update mode button highlighting
-                document.querySelectorAll('.mode-button').forEach(button => {
-                    const buttonMode = button.getAttribute('onclick').split("'")[1];
-                    if (buttonMode === data.current_mode) {
-                        button.classList.add('active-mode');
-                    } else {
-                        button.classList.remove('active-mode');
-                    }
-                });
-
-                // Update visibility of sections
-                const summerSection = document.getElementById('summer-tank-section');
-                const winterSection = document.getElementById('winter-tank-section');
-                const changeoverControls = document.getElementById('changeover-controls');
-
-                if (data.current_mode === 'SUMMER') {
-                    summerSection.style.display = 'block';
-                    winterSection.style.display = 'none';
-                    changeoverControls.style.display = 'none';
-                } else if (data.current_mode === 'WINTER') {
-                    summerSection.style.display = 'none';
-                    winterSection.style.display = 'block';
-                    changeoverControls.style.display = 'none';
-                } else if (data.current_mode === 'CHANGEOVER') {
-                    summerSection.style.display = 'block';
-                    winterSection.style.display = 'block';
-                    changeoverControls.style.display = 'block';
-                }
-                
-                // Update tank states and stats
-                document.getElementById('summer-state').textContent = data.summer_tank.state;
-                document.getElementById('winter-state').textContent = data.winter_tank.state;
-                document.getElementById('summer-stats').innerHTML = formatStats(data.summer_tank.stats);
-                document.getElementById('winter-stats').innerHTML = formatStats(data.winter_tank.stats);
-                
-                // Update pump status
-                document.getElementById('well-pump-status').textContent = data.well_pump_status;
-                document.getElementById('dist-pump-status').textContent = data.dist_pump_status;
-
-                updateModeDebug();
-            })
-            .catch(error => {
-                console.error('Error updating state:', error);
-            });
-    }
-
-    function changeMode(mode) {
-        console.log('changeMode called with mode:', mode);
-        selectedMode = mode;
-        
-        fetch('/api/mode', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ mode: mode })
-        })
-        .then(response => {
-            console.log('Initial response status:', response.status);
-            return response.json();
-        })
-        .then(data => {
-            console.log('Initial response data:', data);
-            if (data.status === 'confirmation_required') {
-                document.getElementById('mode-change-message').textContent = data.message;
-                modal.show();
-            }
-        })
-        .catch(error => {
-            console.error('Error in initial request:', error);
-            modeChangeStatus = 'Error: ' + error;
-            updateModeDebug();
-        });
-    }
-
-    function updateGPIOStates() {
-        fetch('/api/gpio_states')
-            .then(response => response.json())
-            .then(data => {
-                // Update Summer Tank States
-                let summerHtml = `
-                    <p>High (Pin ${data.summer_tank.high.pin}): 
-                        Raw: ${data.summer_tank.high.raw_value} 
-                        Inverted: ${data.summer_tank.high.inverted_value}</p>
-                    <p>Low (Pin ${data.summer_tank.low.pin}): 
-                        Raw: ${data.summer_tank.low.raw_value} 
-                        Inverted: ${data.summer_tank.low.inverted_value}</p>
-                    <p>Empty (Pin ${data.summer_tank.empty.pin}): 
-                        Raw: ${data.summer_tank.empty.raw_value} 
-                        Inverted: ${data.summer_tank.empty.inverted_value}</p>
-                `;
-                document.getElementById('summer-gpio-states').innerHTML = summerHtml;
-
-                // Update Winter Tank States
-                let winterHtml = `
-                    <p>High (Pin ${data.winter_tank.high.pin}): 
-                        Raw: ${data.winter_tank.high.raw_value} 
-                        Inverted: ${data.winter_tank.high.inverted_value}</p>
-                    <p>Low (Pin ${data.winter_tank.low.pin}): 
-                        Raw: ${data.winter_tank.low.raw_value} 
-                        Inverted: ${data.winter_tank.low.inverted_value}</p>
-                `;
-                document.getElementById('winter-gpio-states').innerHTML = winterHtml;
-
-                // Update Pump States
-                let pumpHtml = `
-                    <p>Well Pump (Pin ${data.pumps.well.pin}): 
-                        ${data.pumps.well.value}</p>
-                    <p>Distribution Pump (Pin ${data.pumps.distribution.pin}): 
-                        ${data.pumps.distribution.value}</p>
-                `;
-                document.getElementById('pump-gpio-states').innerHTML = pumpHtml;
-            });
-    }
-
-    // Event Listeners
-    document.getElementById('confirm-mode-change').addEventListener('click', function() {
-        console.log('Confirmation clicked for mode:', selectedMode);
-        if (selectedMode) {
-            fetch('/api/mode', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    mode: selectedMode,
-                    confirm: true 
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Confirmation response data:', data);
-                if (data.status === 'success') {
-                    lastModeChange = new Date().toLocaleString();
-                    modeChangeStatus = 'Success: ' + data.message;
-                    updateState();
-                }
-                modal.hide();
-            })
-            .catch(error => {
-                console.error('Error in confirmation:', error);
-                modeChangeStatus = 'Error: ' + error;
-                updateModeDebug();
-            });
-        }
-    });
-
-// Add this after your other event listeners
-let manualPumpRunning = false;
-
-document.getElementById('manual-pump-toggle').addEventListener('click', function() {
-    manualPumpRunning = !manualPumpRunning;  // Toggle the state
-    
-    // Update button text based on new state
-    this.textContent = manualPumpRunning ? 'Stop Well Pump' : 'Start Well Pump';
-    
-    // Send request to server
-    fetch('/api/manual_pump', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ running: manualPumpRunning })
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Manual pump response:', data);
-        if (data.status === 'success') {
-            // Update the status display
-            document.getElementById('manual-pump-status').textContent = 
-                manualPumpRunning ? 'ON' : 'OFF';
-        } else {
-            // Revert the button and state if there was an error
-            manualPumpRunning = !manualPumpRunning;
-            this.textContent = manualPumpRunning ? 'Stop Well Pump' : 'Start Well Pump';
-            console.error('Failed to change pump state:', data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error controlling pump:', error);
-        // Revert the button and state on error
-        manualPumpRunning = !manualPumpRunning;
-        this.textContent = manualPumpRunning ? 'Stop Well Pump' : 'Start Well Pump';
-    });
-});
-
-    // Initialize everything when the page loads
-    document.addEventListener('DOMContentLoaded', function() {
-        updateState(); // Initial state update
-        setInterval(updateState, 1000); // Regular state updates
-        setInterval(updateGPIOStates, 1000); // Regular GPIO updates
-        
-        // Debug button clicks
-        const modeButtons = document.querySelectorAll('.mode-button');
-        modeButtons.forEach(button => {
-            button.addEventListener('click', function(e) {
-                console.log('Mode button clicked:', this.textContent.trim());
-            });
-        });
-    });
-
-// Add this to your updateState function to keep manual pump button in sync
-// Inside the updateState function, add this where other mode-specific updates are handled:
-if (data.current_mode === 'CHANGEOVER') {
-    const pumpButton = document.getElementById('manual-pump-toggle');
-    const pumpStatus = data.well_pump_status;
-    manualPumpRunning = pumpStatus === 'ON';
-    if (pumpButton) {
-        pumpButton.textContent = manualPumpRunning ? 'Stop Well Pump' : 'Start Well Pump';
-    }
-    document.getElementById('manual-pump-status').textContent = pumpStatus;
-}
-</script>
+    <!-- Add the new modular main script -->
+    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
+
 </html>

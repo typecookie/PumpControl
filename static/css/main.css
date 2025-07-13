@@ -1,0 +1,24 @@
+/* Global styles */
+body {
+    background-color: #f5f5f5;
+}
+
+.container {
+    max-width: 1200px;
+}
+
+/* Card styles */
+.card {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 1rem;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+}
+
+/* Debug section */
+.debug-section {
+    font-family: monospace;
+    font-size: 0.9em;
+}

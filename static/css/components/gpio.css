@@ -1,0 +1,14 @@
+.gpio-states {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.gpio-value {
+    display: inline-block;
+    min-width: 60px;
+    text-align: right;
+}
+
+.gpio-pin {
+    color: #666;
+}

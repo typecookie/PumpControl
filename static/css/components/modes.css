@@ -1,0 +1,16 @@
+.mode-button {
+    margin: 5px;
+    min-width: 120px;
+    transition: all 0.3s ease;
+}
+
+.active-mode {
+    border: 2px solid #28a745 !important;
+    background-color: rgba(40, 167, 69, 0.1);
+}
+
+#mode-debug {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+}

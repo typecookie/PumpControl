@@ -1,0 +1,23 @@
+.pump-status {
+    font-weight: bold;
+}
+
+#changeover-controls {
+    transition: display 0.3s ease-in-out;
+}
+
+.pump-control-button {
+    min-width: 120px;
+}
+
+#manual-pump-status {
+    color: #0d6efd;
+}
+
+.pump-status-image {
+    max-width: 200px;
+    height: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 5px;
+}
