@@ -63,6 +63,28 @@ function handlePumpToggle() {
         body: JSON.stringify({ running: manualPumpRunning })
     })
     .then(response => response.json())
-    .then(handlePumpResponse)
-    .catch(handlePumpError);
+    .then(handlePumpResponse)  // This function is called but not defined
+    .catch(handlePumpError);   // This function is called but not defined
+}
+
+function handlePumpResponse(data) {
+    if (data.status === 'success') {
+        // Update the pump status based on server response
+        manualPumpRunning = data.pump_running;
+        updateManualPumpControl(manualPumpRunning ? 'ON' : 'OFF');
+    } else if (data.status === 'error') {
+        console.error('Pump control error:', data.message);
+        // Revert the button state
+        manualPumpRunning = !manualPumpRunning;
+        updateManualPumpControl(manualPumpRunning ? 'ON' : 'OFF');
+        alert(data.message);
+    }
+}
+
+function handlePumpError(error) {
+    console.error('Error controlling pump:', error);
+    // Revert the button state on error
+    manualPumpRunning = !manualPumpRunning;
+    updateManualPumpControl(manualPumpRunning ? 'ON' : 'OFF');
+    alert('Failed to control pump. Please try again.');
 }

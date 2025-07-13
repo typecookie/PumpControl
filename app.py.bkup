@@ -245,15 +245,15 @@ def create_app():
             return render_template('index.html', **initial_state)
         except Exception as e:
             print(f"Error in index route: {e}")
-            return render_template('index.html', 
-                                error=str(e),
-                                current_mode='unknown',
-                                available_modes=MODES,
-                                summer_tank_state='unknown',
-                                winter_tank_state='unknown',
-                                well_pump_status='unknown',
-                                dist_pump_status='unknown',
-                                active_tank='none')
+            return render_template('index.html',
+                                   error=str(e),
+                                   current_mode='unknown',
+                                   available_modes=MODES,
+                                   summer_tank_state='unknown',
+                                   winter_tank_state='unknown',
+                                   well_pump_status='unknown',
+                                   dist_pump_status='unknown',
+                                   active_tank='none')
 
     @app.route('/api/state')
     def get_state():
