@@ -19,10 +19,111 @@ export function initModeControls() {
     });
 
     // Set up mode change confirmation handler
-    document.getElementById('confirm-mode-change').addEventListener('click', handleModeChangeConfirm);
+    document.getElementById('confirm-mode-change').addEventListener('click', function() {
+        console.log('Confirming mode change to:', selectedMode);
+        confirmModeChange();
+    });
+
+    // Handle modal close/dismiss
+    document.getElementById('modeConfirmModal').addEventListener('hidden.bs.modal', function () {
+        console.log('Modal closed, resetting state');
+        selectedMode = null;
+    });
+}
+
+export function changeMode(mode) {
+    console.log('changeMode called with mode:', mode);
+    selectedMode = mode;
+    
+    fetch('/api/mode', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ mode: mode })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Mode change response:', data);
+        if (data.status === 'confirmation_required') {
+            const messageElement = document.getElementById('mode-change-message');
+            if (messageElement) {
+                messageElement.textContent = data.message;
+            }
+            modal.show();
+        } else if (data.status === 'success') {
+            lastModeChange = new Date().toLocaleString();
+            modeChangeStatus = 'Success: ' + data.message;
+            updateModeDisplay(data.current_mode);
+            updateModeDebug();
+        } else {
+            modeChangeStatus = 'Error: ' + (data.message || 'Unknown error');
+            updateModeDebug();
+        }
+    })
+    .catch(error => {
+        console.error('Error in mode change request:', error);
+        modeChangeStatus = 'Error: ' + error;
+        updateModeDebug();
+        selectedMode = null;
+    });
+}
+
+function confirmModeChange() {
+    if (!selectedMode) {
+        console.error('No mode selected for confirmation');
+        return;
+    }
+
+    console.log('Sending confirmation for mode:', selectedMode);
+    
+    fetch('/api/mode', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            mode: selectedMode, 
+            confirm: true 
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Mode change confirmation response:', data);
+        modal.hide();
+        
+        if (data.status === 'success') {
+            lastModeChange = new Date().toLocaleString();
+            modeChangeStatus = 'Success: ' + data.message;
+            
+            // Force an immediate state update
+            fetch('/api/state')
+                .then(response => response.json())
+                .then(stateData => {
+                    console.log('State after mode change:', stateData);
+                    updateModeDisplay(stateData.current_mode);
+                })
+                .catch(error => {
+                    console.error('Error fetching state after mode change:', error);
+                });
+        } else {
+            modeChangeStatus = 'Error: ' + (data.message || 'Unknown error');
+            updateModeDebug();
+        }
+    })
+    .catch(error => {
+        console.error('Error in mode change confirmation:', error);
+        modeChangeStatus = 'Error: ' + error;
+        updateModeDebug();
+        modal.hide();
+    })
+    .finally(() => {
+        selectedMode = null;
+    });
 }
 
 export function updateModeDisplay(currentMode) {
+    console.log('Updating mode display to:', currentMode);
     const currentModeElement = document.getElementById('current-mode');
     if (currentModeElement) {
         currentModeElement.textContent = currentMode;
@@ -31,11 +132,7 @@ export function updateModeDisplay(currentMode) {
     // Update mode button highlighting
     document.querySelectorAll('.mode-button').forEach(button => {
         const buttonMode = button.getAttribute('data-mode');
-        if (buttonMode === currentMode) {
-            button.classList.add('active-mode');
-        } else {
-            button.classList.remove('active-mode');
-        }
+        button.classList.toggle('active-mode', buttonMode === currentMode);
     });
 
     updateModeDebug();
@@ -61,58 +158,4 @@ function updateSectionVisibility(mode) {
     if (summerSection) summerSection.style.display = mode === 'SUMMER' || mode === 'CHANGEOVER' ? 'block' : 'none';
     if (winterSection) winterSection.style.display = mode === 'WINTER' || mode === 'CHANGEOVER' ? 'block' : 'none';
     if (changeoverControls) changeoverControls.style.display = mode === 'CHANGEOVER' ? 'block' : 'none';
-}
-
-export function changeMode(mode) {
-    console.log('changeMode called with mode:', mode);
-    selectedMode = mode;
-    
-    fetch('/api/mode', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ mode: mode })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'confirmation_required') {
-            const messageElement = document.getElementById('mode-change-message');
-            if (messageElement) {
-                messageElement.textContent = data.message;
-            }
-            modal.show();
-        }
-    })
-    .catch(error => {
-        console.error('Error in initial request:', error);
-        modeChangeStatus = 'Error: ' + error;
-        updateModeDebug();
-    });
-}
-
-function handleModeChangeConfirm() {
-    console.log('Mode change confirmed for mode:', selectedMode);
-    
-    fetch('/api/mode', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ mode: selectedMode, confirm: true })
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log('Confirmation response:', data);
-        lastModeChange = new Date().toLocaleString();
-        modeChangeStatus = 'Success: ' + data.message;
-        updateModeDisplay(selectedMode);
-        modal.hide();
-    })
-    .catch(error => {
-        console.error('Error during confirmation:', error);
-        modeChangeStatus = 'Error: ' + error;
-        updateModeDebug();
-        modal.hide();
-    });
 }

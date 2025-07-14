@@ -1,8 +1,9 @@
 from flask import Flask
 from .utils.gpio_utils import GPIOManager
 from .controllers.pump_controller import PumpController
+from .controllers import Controller
 
-# Initialize singleton controller
+# Initialize siare you cabable of looking t ngleton controller
 pump_controller = PumpController()
 
 def create_app():

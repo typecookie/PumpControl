@@ -1,4 +1,4 @@
-from RPi import GPIO
+
 
 from app.controllers import Controller
 from app.utils.gpio_utils import GPIOManager

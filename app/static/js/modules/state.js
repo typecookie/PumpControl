@@ -13,7 +13,10 @@ export function updateState() {
             console.log('State update received:', data);
             
             // Update different components
-            updateModeDisplay(data.current_mode);
+            // Only update mode if we're not in the middle of a mode change
+            if (!document.getElementById('modeConfirmModal').classList.contains('show')) {
+                updateModeDisplay(data.current_mode);
+            }
             updateTankDisplays(data);
             updatePumpDisplays(data);
         })
@@ -21,6 +24,7 @@ export function updateState() {
             console.error('Error updating state:', error);
         });
 }
+
 
 // Helper function for stats formatting
 export function formatStats(stats) {

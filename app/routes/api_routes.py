@@ -2,37 +2,67 @@
 from flask import Blueprint, jsonify, request
 from app.controllers.pump_controller import PumpController
 from app.utils.gpio_utils import GPIOManager
-from app.config import SUMMER_HIGH, SUMMER_LOW, SUMMER_EMPTY, WINTER_HIGH, WINTER_LOW, WELL_PUMP, DIST_PUMP
+from app.utils.config_utils import SUMMER_HIGH, SUMMER_LOW, SUMMER_EMPTY, WINTER_HIGH, WINTER_LOW, WELL_PUMP, DIST_PUMP
+from .. import pump_controller  # Import the pump_controller instance from app package
+
+
+from ..controllers.mode_controller import ModeController
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
+mode_controller = ModeController()
+
 @bp.route('/state')
 def get_state():
-    controller = PumpController()
     try:
-        return jsonify(controller.get_system_state())
+        return jsonify(pump_controller.get_system_state())
     except Exception as e:
         print(f"Error in get_state: {e}")
         return jsonify({
             'error': str(e),
-            'current_mode': controller.current_mode,
+            'current_mode': pump_controller.mode_controller.get_current_mode(),
             'summer_tank': {'state': 'unknown', 'stats': {}},
             'winter_tank': {'state': 'unknown', 'stats': {}},
             'well_pump_status': 'unknown',
             'dist_pump_status': 'unknown',
-            'timestamp': controller.get_timestamp()
+            'timestamp': pump_controller.get_timestamp()
         })
 
 @bp.route('/mode', methods=['POST'])
 def change_mode():
-    controller = PumpController()
     try:
-        new_mode = request.json.get('mode')
-        confirm = request.json.get('confirm', False)
-        return jsonify(controller.request_mode_change(new_mode, confirm))
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No JSON data received'
+            }), 400
+
+        new_mode = data.get('mode')
+        confirm = data.get('confirm', False)
+        
+        print(f"Mode change request - New mode: {new_mode}, Confirm: {confirm}")
+        
+        if not new_mode:
+            return jsonify({
+                'status': 'error',
+                'message': 'No mode specified'
+            }), 400
+            
+        result = pump_controller.mode_controller.request_mode_change(new_mode, confirm)
+        
+        if isinstance(result, tuple):
+            response, status_code = result
+            return jsonify(response), status_code
+        
+        return jsonify(result)
+        
     except Exception as e:
-        print(f"Error in change_mode: {e}")
-        return jsonify({'error': str(e)}), 500
+        print(f"Error in mode change endpoint: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @bp.route('/gpio_states')
 def get_gpio_states():
