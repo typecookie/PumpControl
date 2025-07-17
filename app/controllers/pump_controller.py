@@ -159,25 +159,41 @@ class PumpController(IPumpController):
 
                 # Handle pump control based on mode
                 if self.current_mode == 'SUMMER':
+                    # Well pump control
                     if self.summer_tank.state in ['EMPTY', 'LOW']:
                         pump_running = True
                     elif self.summer_tank.state == 'HIGH':
                         pump_running = False
 
-                    print(f"DEBUG: Summer tank state: {self.summer_tank.state}, Setting pump to: {pump_running}")
+                    print(f"DEBUG: Summer tank state: {self.summer_tank.state}, Setting well pump to: {pump_running}")
                     GPIOManager.set_pump(WELL_PUMP, pump_running)
+
+                    # Distribution pump control for summer mode
+                    if self.summer_tank.state in ['ERROR', 'EMPTY']:
+                        dist_pump_state = False
+                    else:
+                        dist_pump_state = True  # Run in all other states (HIGH, MID, LOW)
+
+                    print(f"DEBUG: Summer tank state: {self.summer_tank.state}, Setting distribution pump to: {dist_pump_state}")
+                    GPIOManager.set_pump(DIST_PUMP, dist_pump_state)
 
                     if pump_running:
                         self.summer_tank.update_stats(True)
 
                 elif self.current_mode == 'WINTER':
+                    # Well pump control
                     if self.winter_tank.state in ['LOW']:
                         pump_running = True
                     elif self.winter_tank.state == 'HIGH':
                         pump_running = False
 
-                    print(f"DEBUG: Winter tank state: {self.winter_tank.state}, Setting pump to: {pump_running}")
+                    print(f"DEBUG: Winter tank state: {self.winter_tank.state}, Setting well pump to: {pump_running}")
                     GPIOManager.set_pump(WELL_PUMP, pump_running)
+
+                    # Distribution pump control for winter mode
+                    dist_pump_state = not (self.winter_tank.state == 'ERROR')  # Only turn off on ERROR
+                    print(f"DEBUG: Winter tank state: {self.winter_tank.state}, Setting distribution pump to: {dist_pump_state}")
+                    GPIOManager.set_pump(DIST_PUMP, dist_pump_state)
 
                     if pump_running:
                         self.winter_tank.update_stats(True)
