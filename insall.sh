@@ -56,7 +56,7 @@ pip install \
 # Clone the repository (you'll need to replace with your actual repo URL)
 echo "Cloning application repository..."
 cd /opt/pump-control
-git clone https://github.com/jahidhasanprodhan/Raspberry-Pi-Pump-Control-System.git app
+git clone https://github.com/typecookie/PumpControl.git app
 
 # Create necessary directories
 echo "Creating required directories..."
