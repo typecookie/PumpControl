@@ -1,8 +1,8 @@
-
+from RPi import GPIO
 
 from app.controllers import Controller
 from app.utils.gpio_utils import GPIOManager
-from app.config import (
+from app.utils.config_utils import (
     SUMMER_HIGH, SUMMER_LOW, SUMMER_EMPTY,
     WINTER_HIGH, WINTER_LOW,
     WELL_PUMP, DIST_PUMP
@@ -87,35 +87,63 @@ class GPIOController(Controller):
                 }
             }
         }
-@classmethod
-def initialize(cls):
-    """Initialize GPIO settings"""
-    try:
-        print("Setting up GPIO...")
-        GPIO.setwarnings(False)
-        GPIO.cleanup()
-        GPIO.setmode(GPIO.BCM)
-
-        # Setup outputs
-        print("Setting up pump pins...")
-        GPIO.setup(WELL_PUMP, GPIO.OUT)
-        GPIO.setup(DIST_PUMP, GPIO.OUT)
-
-        # Setup inputs with pull-up resistors
-        print("Setting up sensor pins...")
-        GPIO.setup(SUMMER_HIGH, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.setup(SUMMER_LOW, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.setup(SUMMER_EMPTY, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.setup(WINTER_HIGH, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.setup(WINTER_LOW, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-        # Initialize outputs to OFF
-        GPIO.output(WELL_PUMP, GPIO.LOW)
-        GPIO.output(DIST_PUMP, GPIO.LOW)
-
-        print("GPIO initialization complete")
-        return True
-
-    except Exception as e:
-        print(f"Error in GPIO initialization: {e}")
-        return False
+class GPIOManager:
+    _initialized = False
+    
+    @staticmethod
+    def initialize():
+        """Initialize GPIO"""
+        try:
+            if GPIOManager._initialized:
+                return True
+                
+            print("Initializing GPIO...")
+            
+            # Check if GPIO is already set up
+            current_mode = GPIO.getmode()
+            if current_mode is not None:
+                print(f"GPIO already initialized in mode: {current_mode}")
+            else:
+                print("Setting GPIO mode to BCM")
+                GPIO.setmode(GPIO.BCM)
+                
+            # Clean up any existing configurations
+            GPIO.cleanup()
+            
+            # Setup all pins
+            pins_config = [
+                (WELL_PUMP, GPIO.OUT),
+                (DIST_PUMP, GPIO.OUT),
+                (SUMMER_HIGH, GPIO.IN, GPIO.PUD_UP),
+                (SUMMER_LOW, GPIO.IN, GPIO.PUD_UP),
+                (SUMMER_EMPTY, GPIO.IN, GPIO.PUD_UP),
+                (WINTER_HIGH, GPIO.IN, GPIO.PUD_UP),
+                (WINTER_LOW, GPIO.IN, GPIO.PUD_UP)
+            ]
+            
+            for pin_config in pins_config:
+                try:
+                    if len(pin_config) == 2:
+                        pin, mode = pin_config
+                        GPIO.setup(pin, mode)
+                        print(f"Set up pin {pin} as {'OUTPUT' if mode == GPIO.OUT else 'INPUT'}")
+                    else:
+                        pin, mode, pull_up_down = pin_config
+                        GPIO.setup(pin, mode, pull_up_down=pull_up_down)
+                        print(f"Set up pin {pin} as INPUT with pull-up")
+                except Exception as e:
+                    print(f"Error setting up pin {pin}: {e}")
+                    raise
+            
+            # Initialize pump states to OFF
+            GPIO.output(WELL_PUMP, GPIO.LOW)
+            GPIO.output(DIST_PUMP, GPIO.LOW)
+            
+            GPIOManager._initialized = True
+            print("GPIO initialization complete")
+            return True
+            
+        except Exception as e:
+            print(f"GPIO initialization failed: {e}")
+            GPIOManager._initialized = False
+            return False

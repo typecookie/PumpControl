@@ -54,6 +54,9 @@ class PumpController(IPumpController):
             self._last_state = None
             self._state_timestamp = 0
             
+            # Initialize distribution pump to ON by default
+            GPIOManager.set_pump(DIST_PUMP, True)
+            
             print(f"PumpController initialized with mode: {self.current_mode}")
             self._initialized = True
             
@@ -137,6 +140,7 @@ class PumpController(IPumpController):
     def _control_loop(self):
         """Main control loop"""
         pump_running = False
+        last_mode = None  # Track mode changes
 
         while self.running:
             try:
@@ -144,6 +148,14 @@ class PumpController(IPumpController):
                 self.current_mode = self.mode_controller.get_current_mode()
                 self._update_tank_states()
                 print(f"Current mode: {self.current_mode}")
+
+                # Check if mode has changed
+                if last_mode != self.current_mode:
+                    print(f"Mode changed from {last_mode} to {self.current_mode}")
+                    if self.current_mode == 'CHANGEOVER':
+                        # Set distribution pump ON by default when entering CHANGEOVER mode
+                        GPIOManager.set_pump(DIST_PUMP, True)
+                    last_mode = self.current_mode
 
                 # Handle pump control based on mode
                 if self.current_mode == 'SUMMER':
@@ -173,16 +185,19 @@ class PumpController(IPumpController):
                 elif self.current_mode == 'CHANGEOVER':
                     pump_running = self.manual_pump_running
                     GPIOManager.set_pump(WELL_PUMP, pump_running)
-                    print(f"Changeover mode - Manual control: Pump {'ON' if pump_running else 'OFF'}")
+                    # Removed the line that forces dist pump ON
+                    print(f"Changeover mode - Manual control: Well Pump {'ON' if pump_running else 'OFF'}, Dist Pump {GPIOManager.get_pump_state(DIST_PUMP)}")
 
                 # Safety check for errors
                 if (self.summer_tank.state == 'ERROR' or self.winter_tank.state == 'ERROR'):
                     pump_running = False
                     GPIOManager.set_pump(WELL_PUMP, False)
-                    print("Tank error state detected - Well pump OFF for safety")
+                    GPIOManager.set_pump(DIST_PUMP, False)  # Also stop dist pump on error
+                    print("Tank error state detected - All pumps OFF for safety")
 
                 actual_pump_state = GPIOManager.get_pump_state(WELL_PUMP)
-                print(f"DEBUG: Final pump state verification: {actual_pump_state}")
+                actual_dist_state = GPIOManager.get_pump_state(DIST_PUMP)
+                print(f"DEBUG: Final pump state verification: Well pump: {actual_pump_state}, Dist pump: {actual_dist_state}")
 
                 time.sleep(1)
 
@@ -248,3 +263,36 @@ class PumpController(IPumpController):
     def is_running(self):
         """Check if pump controller is running"""
         return self.running and (self.pump_thread and self.pump_thread.is_alive())
+
+    def set_distribution_pump(self, state):
+        """Control distribution pump state
+        
+        Args:
+            state (bool): True to turn on, False to turn off
+            
+        Returns:
+            dict: Status response
+        """
+        try:
+            GPIOManager.set_pump(DIST_PUMP, state)
+            actual_state = GPIOManager.get_pump_state(DIST_PUMP)
+            
+            if actual_state == state:
+                return {
+                    'status': 'success',
+                    'message': f'Distribution pump {"started" if state else "stopped"}',
+                    'pump_running': actual_state
+                }
+            else:
+                return {
+                    'status': 'error',
+                    'message': 'Failed to verify distribution pump state',
+                    'pump_running': actual_state
+                }
+        except Exception as e:
+            print(f"Error controlling distribution pump: {e}")
+            return {
+                'status': 'error',
+                'message': f'Error controlling distribution pump: {str(e)}',
+                'pump_running': GPIOManager.get_pump_state(DIST_PUMP)
+            }

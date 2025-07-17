@@ -1,6 +1,6 @@
 # app/utils/gpio_utils.py
 import RPi.GPIO as GPIO
-from app.config import WELL_PUMP, DIST_PUMP, SUMMER_HIGH, SUMMER_LOW, SUMMER_EMPTY, WINTER_HIGH, WINTER_LOW
+from app.utils.config_utils import WELL_PUMP, DIST_PUMP, SUMMER_HIGH, SUMMER_LOW, SUMMER_EMPTY, WINTER_HIGH, WINTER_LOW
 
 class GPIOManager:
     _initialized = False
@@ -63,4 +63,8 @@ class GPIOManager:
     @staticmethod
     def set_pump(pin, state):
         """Set pump state"""
-        GPIO.output(pin, GPIO.HIGH if state else GPIO.LOW)
+        gpio_state = GPIO.HIGH if bool(state) else GPIO.LOW
+        GPIO.output(pin, gpio_state)
+        # Verify the state was set correctly
+        actual_state = GPIO.input(pin)
+        return actual_state == gpio_state

@@ -6,12 +6,15 @@ import os
 bind = "0.0.0.0:5000"
 backlog = 2048
 
-# Worker processes
-workers = 1  # For this application, we want only 1 worker due to GPIO handling
+# Worker settings
+workers = 1
 worker_class = 'sync'
 worker_connections = 1000
-timeout = 30
+timeout = 120  # Increased timeout
 keepalive = 2
+graceful_timeout = 30
+max_requests = 1000
+max_requests_jitter = 50
 
 # Process naming
 proc_name = 'pump-control'
@@ -43,20 +46,27 @@ def on_exit(server):
 
 def post_fork(server, worker):
     """Run after a worker has been forked."""
-    from app.controllers.pump_controller import PumpController
-    
-    # Initialize the pump controller in the worker
-    controller = PumpController()
-    if not controller.is_running:
-        controller.start()
-    
-    print(f"Worker initialized. Current mode: {controller.current_mode}")
-
+    try:
+        from app.controllers.pump_controller import PumpController
+        
+        # Initialize the pump controller in the worker
+        controller = PumpController()
+        if not controller.is_running:
+            controller.start()
+        
+        print(f"Worker initialized. Current mode: {controller.current_mode}")
+    except Exception as e:
+        print(f"Error initializing worker: {e}")
+        
 def worker_exit(server, worker):
     """Run when a worker exits."""
-    from app.controllers.pump_controller import PumpController
-    
-    # Clean up the pump controller
-    controller = PumpController()
-    controller.stop()
-    print("Worker shutting down, pump controller stopped.")
+    try:
+        from app.controllers.pump_controller import PumpController
+        
+        # Clean up the pump controller
+        controller = PumpController()
+        if controller.is_running:
+            controller.stop()
+        print("Worker shutting down, pump controller stopped.")
+    except Exception as e:
+        print(f"Error during worker cleanup: {e}")

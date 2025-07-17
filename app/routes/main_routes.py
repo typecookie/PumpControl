@@ -1,33 +1,39 @@
-# app/routes/main_routes.py
-from flask import Blueprint, render_template
-from app.controllers.pump_controller import PumpController
-from app.config import MODES
+from flask import Blueprint, render_template, current_app
+from flask_login import login_required
+from ..controllers import pump_controller
+from ..utils.config_utils import MODES
+from ..models.user import UserRole  # Add this import
+import logging
 
 bp = Blueprint('main', __name__)
+logger = logging.getLogger(__name__)
 
 @bp.route('/')
+@login_required
 def index():
-    controller = PumpController()
     try:
-        state = controller.get_system_state()
-        initial_state = {
-            'current_mode': state['current_mode'],
-            'available_modes': MODES,
-            'summer_tank_state': state['summer_tank']['state'],
-            'winter_tank_state': state['winter_tank']['state'],
-            'well_pump_status': state['well_pump_status'],
-            'dist_pump_status': state['dist_pump_status'],
-            'active_tank': state['active_tank']
-        }
-        return render_template('index.html', **initial_state)
-    except Exception as e:
-        print(f"Error in index route: {e}")
+        state = pump_controller.get_system_state()
         return render_template('index.html',
-                           error=str(e),
-                           current_mode='unknown',
-                           available_modes=MODES,
-                           summer_tank_state='unknown',
-                           winter_tank_state='unknown',
-                           well_pump_status='unknown',
-                           dist_pump_status='unknown',
-                           active_tank='none')
+                             current_mode=state.get('current_mode', 'Unknown'),
+                             available_modes=MODES,
+                             summer_tank_state=state.get('summer_tank', {}).get('state', 'Unknown'),
+                             winter_tank_state=state.get('winter_tank', {}).get('state', 'Unknown'),
+                             well_pump_status=state.get('well_pump_status', 'Unknown'),
+                             dist_pump_status=state.get('dist_pump_status', 'Unknown'),
+                             summer_tank_stats=state.get('summer_tank', {}).get('stats', {}),
+                             winter_tank_stats=state.get('winter_tank', {}).get('stats', {}),
+                             thread_running=state.get('thread_running', False),
+                             UserRole=UserRole)  # Add this line
+    except Exception as e:
+        logger.error(f"Error in index route: {e}", exc_info=True)
+        return render_template('index.html',
+                             current_mode='Error',
+                             available_modes=MODES,
+                             summer_tank_state='Error',
+                             winter_tank_state='Error',
+                             well_pump_status='Error',
+                             dist_pump_status='Error',
+                             summer_tank_stats={},
+                             winter_tank_stats={},
+                             thread_running=False,
+                             UserRole=UserRole)  # Add this line

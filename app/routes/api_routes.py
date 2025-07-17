@@ -1,100 +1,62 @@
-# app/routes/api_routes.py
 from flask import Blueprint, jsonify, request
-from app.controllers.pump_controller import PumpController
-from app.utils.gpio_utils import GPIOManager
-from app.utils.config_utils import SUMMER_HIGH, SUMMER_LOW, SUMMER_EMPTY, WINTER_HIGH, WINTER_LOW, WELL_PUMP, DIST_PUMP
-from .. import pump_controller  # Import the pump_controller instance from app package
+from flask_login import login_required, current_user
+from ..models.user import UserRole
+from ..controllers import pump_controller, mode_controller
+from app.models.user import operator_required
+from ..utils.config_utils import (
+    WELL_PUMP, DIST_PUMP, SUMMER_HIGH, SUMMER_LOW, 
+    SUMMER_EMPTY, WINTER_HIGH, WINTER_LOW
+)
+from ..utils.gpio_utils import GPIOManager
 
+bp = Blueprint('api', __name__)
 
-from ..controllers.mode_controller import ModeController
-
-bp = Blueprint('api', __name__, url_prefix='/api')
-
-mode_controller = ModeController()
-
-@bp.route('/state')
+@bp.route('/state', methods=['GET'])
+@login_required
 def get_state():
+    """Get current system state"""
     try:
-        return jsonify(pump_controller.get_system_state())
+        # Use the existing get_system_state method which has all the info we need
+        state = pump_controller.get_system_state()
+        return jsonify(state)
     except Exception as e:
-        print(f"Error in get_state: {e}")
-        return jsonify({
-            'error': str(e),
-            'current_mode': pump_controller.mode_controller.get_current_mode(),
-            'summer_tank': {'state': 'unknown', 'stats': {}},
-            'winter_tank': {'state': 'unknown', 'stats': {}},
-            'well_pump_status': 'unknown',
-            'dist_pump_status': 'unknown',
-            'timestamp': pump_controller.get_timestamp()
-        })
+        import traceback
+        print(f"Error in get_state: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@bp.route('/mode', methods=['POST'])
-def change_mode():
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({
-                'status': 'error',
-                'message': 'No JSON data received'
-            }), 400
-
-        new_mode = data.get('mode')
-        confirm = data.get('confirm', False)
-        
-        print(f"Mode change request - New mode: {new_mode}, Confirm: {confirm}")
-        
-        if not new_mode:
-            return jsonify({
-                'status': 'error',
-                'message': 'No mode specified'
-            }), 400
-            
-        result = pump_controller.mode_controller.request_mode_change(new_mode, confirm)
-        
-        if isinstance(result, tuple):
-            response, status_code = result
-            return jsonify(response), status_code
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        print(f"Error in mode change endpoint: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@bp.route('/gpio_states')
+@bp.route('/gpio_states', methods=['GET'])
+@login_required
 def get_gpio_states():
     try:
-        gpio_states = {
+        states = {
             'summer_tank': {
                 'high': {
                     'pin': SUMMER_HIGH,
-                    'raw_value': GPIOManager.get_raw_sensor_state(SUMMER_HIGH),
-                    'inverted_value': GPIOManager.get_sensor_state(SUMMER_HIGH)
+                    'raw_value': GPIOManager.get_sensor_state(SUMMER_HIGH),
+                    'inverted_value': not GPIOManager.get_sensor_state(SUMMER_HIGH)
                 },
                 'low': {
                     'pin': SUMMER_LOW,
-                    'raw_value': GPIOManager.get_raw_sensor_state(SUMMER_LOW),
-                    'inverted_value': GPIOManager.get_sensor_state(SUMMER_LOW)
+                    'raw_value': GPIOManager.get_sensor_state(SUMMER_LOW),
+                    'inverted_value': not GPIOManager.get_sensor_state(SUMMER_LOW)
                 },
                 'empty': {
                     'pin': SUMMER_EMPTY,
-                    'raw_value': GPIOManager.get_raw_sensor_state(SUMMER_EMPTY),
-                    'inverted_value': GPIOManager.get_sensor_state(SUMMER_EMPTY)
+                    'raw_value': GPIOManager.get_sensor_state(SUMMER_EMPTY),
+                    'inverted_value': not GPIOManager.get_sensor_state(SUMMER_EMPTY)
                 }
             },
             'winter_tank': {
                 'high': {
                     'pin': WINTER_HIGH,
-                    'raw_value': GPIOManager.get_raw_sensor_state(WINTER_HIGH),
-                    'inverted_value': GPIOManager.get_sensor_state(WINTER_HIGH)
+                    'raw_value': GPIOManager.get_sensor_state(WINTER_HIGH),
+                    'inverted_value': not GPIOManager.get_sensor_state(WINTER_HIGH)
                 },
                 'low': {
                     'pin': WINTER_LOW,
-                    'raw_value': GPIOManager.get_raw_sensor_state(WINTER_LOW),
-                    'inverted_value': GPIOManager.get_sensor_state(WINTER_LOW)
+                    'raw_value': GPIOManager.get_sensor_state(WINTER_LOW),
+                    'inverted_value': not GPIOManager.get_sensor_state(WINTER_LOW)
                 }
             },
             'pumps': {
@@ -108,31 +70,65 @@ def get_gpio_states():
                 }
             }
         }
-        return jsonify(gpio_states)
+        return jsonify(states)
     except Exception as e:
-        print(f"Error getting GPIO states: {e}")
-        return jsonify({'error': str(e)})
+        import traceback
+        print(f"Error in get_gpio_states: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@bp.route('/thread_status')
-def get_thread_status():
-    controller = PumpController()
+@bp.route('/pump', methods=['POST'])
+@login_required
+@operator_required
+def control_pump():
     try:
-        return jsonify({
-            'thread_running': controller.is_running,
-            'last_update': controller.get_timestamp()
-        })
-    except Exception as e:
-        return jsonify({
-            'thread_running': False,
-            'error': str(e)
-        })
+        data = request.get_json()
+        if not data or 'running' not in data:
+            return jsonify({'status': 'error', 'message': 'Running state not specified'}), 400
 
-@bp.route('/manual_pump', methods=['POST'])
-def manual_pump():
-    controller = PumpController()
-    try:
-        running = request.json.get('running', False)
-        return jsonify(controller.set_manual_pump(running))
+        result = pump_controller.set_manual_pump(bool(data['running']))
+        return jsonify(result)
     except Exception as e:
-        print(f"Error in manual_pump: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@bp.route('/distribution_pump', methods=['POST'])
+@login_required
+@operator_required
+def control_distribution_pump():
+    try:
+        data = request.get_json()
+        if not data or 'running' not in data:
+            return jsonify({'status': 'error', 'message': 'Running state not specified'}), 400
+
+        result = pump_controller.set_distribution_pump(bool(data['running']))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@bp.route('/mode', methods=['POST'])
+@login_required
+@operator_required
+def change_mode():
+    try:
+        data = request.get_json()
+        new_mode = data.get('mode')
+        confirm = data.get('confirm', False)
+        
+        if new_mode not in ['SUMMER', 'WINTER', 'CHANGEOVER']:
+            return jsonify({'status': 'error', 'message': 'Invalid mode specified'}), 400
+        
+        # Use the mode controller's request_mode_change method
+        result = mode_controller.request_mode_change(new_mode, confirm)
+        
+        # If it's a dictionary, return it directly
+        if isinstance(result, dict):
+            return jsonify(result)
+        
+        # If it's a tuple (result, status_code), return it properly
+        if isinstance(result, tuple):
+            return jsonify(result[0]), result[1]
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500

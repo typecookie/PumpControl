@@ -17,3 +17,12 @@ class IPumpController(ABC):
     @abstractmethod
     def get_system_state(self):
         pass
+    
+    @abstractmethod
+    def set_distribution_pump(self, state):
+        """Control distribution pump state
+        
+        Args:
+            state (bool): True to turn on, False to turn off
+        """
+        pass

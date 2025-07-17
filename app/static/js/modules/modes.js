@@ -159,3 +159,27 @@ function updateSectionVisibility(mode) {
     if (winterSection) winterSection.style.display = mode === 'WINTER' || mode === 'CHANGEOVER' ? 'block' : 'none';
     if (changeoverControls) changeoverControls.style.display = mode === 'CHANGEOVER' ? 'block' : 'none';
 }
+
+export function handleModeChange(newMode) {
+    if (newMode === 'CHANGEOVER') {
+        // When entering changeover mode, start the distribution pump
+        setTimeout(() => {
+            const event = new CustomEvent('changeover-mode-entered');
+            document.dispatchEvent(event);
+        }, 500);  // Small delay to ensure UI is ready
+    }
+}
+
+// Add this listener in your initialization code
+document.addEventListener('changeover-mode-entered', () => {
+    fetch('/api/pump', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            pump_type: 'dist',
+            running: true 
+        })
+    }).catch(error => console.error('Error starting distribution pump:', error));
+});

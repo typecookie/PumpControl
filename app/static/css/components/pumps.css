@@ -21,3 +21,20 @@
     border-radius: 4px;
     padding: 5px;
 }
+
+/* Enhanced styles */
+.status-on {
+    color: #28a745;
+}
+
+.status-off {
+    color: #dc3545;
+}
+
+.pump-image {
+    transition: transform 0.3s ease;
+}
+
+.pump-image:hover {
+    transform: scale(1.1);
+}

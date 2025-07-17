@@ -27,11 +27,13 @@ function updateWinterTankGPIO(data) {
 }
 
 function updatePumpGPIO(data) {
+    // data.well and data.distribution are objects, not array items
     let html = '';
-    for (const pump of data) {
-        html += `<p>${pump.name} (Pin ${pump.pin}): 
-                Raw: ${pump.raw_value} 
-                Inverted: ${pump.inverted_value}</p>`;
+    if (data.well) {
+        html += `<p>Well Pump (Pin ${data.well.pin}): Value: ${data.well.value}</p>`;
+    }
+    if (data.distribution) {
+        html += `<p>Distribution Pump (Pin ${data.distribution.pin}): Value: ${data.distribution.value}</p>`;
     }
     document.getElementById('pump-gpio-states').innerHTML = html;
 }
