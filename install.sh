@@ -53,7 +53,7 @@ pip install \
     requests \
     RPi.GPIO
 
-# Clone the repository (you'll need to replace with your actual repo URL)
+# Clone the repository
 echo "Cloning application repository..."
 cd /opt/pump-control
 git clone https://github.com/typecookie/PumpControl.git app
@@ -75,6 +75,8 @@ autorestart=true
 stderr_logfile=/opt/pump-control/logs/supervisor.err.log
 stdout_logfile=/opt/pump-control/logs/supervisor.out.log
 environment=PATH="/opt/pump-control/venv/bin"
+startsecs=5
+stopwaitsecs=10
 EOF
 
 # Setup nginx configuration
@@ -108,13 +110,14 @@ Description=Pump Control System
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
 User=$CURRENT_USER
 Group=$CURRENT_USER
 WorkingDirectory=/opt/pump-control/app
 Environment="PATH=/opt/pump-control/venv/bin"
-ExecStart=/usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+ExecStart=/opt/pump-control/venv/bin/gunicorn -c gunicorn_config.py 'app:create_app()'
 Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -125,22 +128,62 @@ echo "Setting up permissions..."
 sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/pump-control
 sudo chown -R $CURRENT_USER:$CURRENT_USER /home/$CURRENT_USER/.pump_control
 
+# Create and configure log files
+echo "Setting up log files..."
+sudo mkdir -p /opt/pump-control/logs
+sudo touch /opt/pump-control/logs/supervisor.err.log
+sudo touch /opt/pump-control/logs/supervisor.out.log
+sudo touch /opt/pump-control/logs/nginx-access.log
+sudo touch /opt/pump-control/logs/nginx-error.log
+sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/pump-control/logs
+sudo chmod 755 /opt/pump-control/logs
+sudo chmod 644 /opt/pump-control/logs/*.log
+
 # Add user to gpio group if it exists
 if getent group gpio > /dev/null; then
     echo "Adding user to gpio group..."
     sudo usermod -a -G gpio $CURRENT_USER
 fi
 
-# Enable and start services
-echo "Starting services..."
+# Create maintenance scripts
+echo "Creating maintenance scripts..."
+
+# Create fix-permissions script
+sudo tee /opt/pump-control/fix-permissions.sh << EOF
+#!/bin/bash
+sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/pump-control/logs
+sudo chmod 755 /opt/pump-control/logs
+sudo touch /opt/pump-control/logs/supervisor.err.log
+sudo touch /opt/pump-control/logs/supervisor.out.log
+sudo touch /opt/pump-control/logs/nginx-access.log
+sudo touch /opt/pump-control/logs/nginx-error.log
+sudo chown $CURRENT_USER:$CURRENT_USER /opt/pump-control/logs/*.log
+sudo chmod 644 /opt/pump-control/logs/*.log
+EOF
+chmod +x /opt/pump-control/fix-permissions.sh
+
+# Create restart script
+sudo tee /opt/pump-control/restart.sh << EOF
+#!/bin/bash
+echo "Stopping services..."
+sudo systemctl stop pump-control
+sudo systemctl stop nginx
+sudo supervisorctl stop all
+
+echo "Fixing permissions..."
+/opt/pump-control/fix-permissions.sh
+
+echo "Restarting services..."
 sudo systemctl daemon-reload
-sudo systemctl enable pump-control
-sudo systemctl enable nginx
-sudo systemctl start pump-control
-sudo systemctl start nginx
 sudo supervisorctl reread
 sudo supervisorctl update
-sudo supervisorctl start pump-control
+sudo systemctl start nginx
+sudo systemctl start pump-control
+
+echo "Service status:"
+sudo systemctl status pump-control
+EOF
+chmod +x /opt/pump-control/restart.sh
 
 # Create uninstall script
 echo "Creating uninstall script..."
@@ -168,7 +211,33 @@ echo "Uninstall complete"
 EOF
 chmod +x /opt/pump-control/uninstall.sh
 
+# Initial service start
+echo "Starting services..."
+sudo systemctl daemon-reload
+sudo systemctl enable pump-control
+sudo systemctl enable nginx
+
+# Stop any running instances
+sudo systemctl stop pump-control
+sudo systemctl stop nginx
+sudo supervisorctl stop all
+
+# Run permission fix
+/opt/pump-control/fix-permissions.sh
+
+# Start services
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo systemctl start nginx
+sudo systemctl start pump-control
+
 echo "Installation complete!"
 echo "The application should now be running on port 80"
-echo "You can check the status using: sudo supervisorctl status pump-control"
-echo "To uninstall, run: /opt/pump-control/uninstall.sh"
+echo "Available management scripts:"
+echo "- Fix permissions: /opt/pump-control/fix-permissions.sh"
+echo "- Restart services: /opt/pump-control/restart.sh"
+echo "- Uninstall: /opt/pump-control/uninstall.sh"
+echo ""
+echo "To check service status:"
+echo "sudo systemctl status pump-control"
+echo "sudo supervisorctl status"
