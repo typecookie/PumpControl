@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1 class="text-center mb-4">Alert Configuration</h1>
+
+    <!-- Notification Channels Configuration -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4 class="mb-0">Notification Channels</h4>
+        </div>
+        <div class="card-body">
+            <ul class="nav nav-tabs" id="channelTabs" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link active" id="email-tab" data-bs-toggle="tab" href="#email" role="tab">Email</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="slack-tab" data-bs-toggle="tab" href="#slack" role="tab">Slack</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="discord-tab" data-bs-toggle="tab" href="#discord" role="tab">Discord</a>
+                </li>
+            </ul>
+
+            <div class="tab-content mt-3" id="channelTabContent">
+                <!-- Email Configuration -->
+                <div class="tab-pane fade show active" id="email" role="tabpanel">
+                    <form id="email-config-form" class="channel-form">
+                        <input type="hidden" name="channel" value="email">
+                        <div class="mb-3">
+                            <label class="form-label">SMTP Server</label>
+                            <input type="text" class="form-control" name="smtp_server" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">SMTP Port</label>
+                            <input type="number" class="form-control" name="smtp_port" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Password</label>
+                            <input type="password" class="form-control" name="password" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">From Email</label>
+                            <input type="email" class="form-control" name="from_email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">To Emails (comma-separated)</label>
+                            <input type="text" class="form-control" name="to_emails" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Email Configuration</button>
+                        <button type="button" class="btn btn-info test-channel" data-channel="email">Test Email</button>
+                    </form>
+                </div>
+
+                <!-- Slack Configuration -->
+                <div class="tab-pane fade" id="slack" role="tabpanel">
+                    <form id="slack-config-form" class="channel-form">
+                        <input type="hidden" name="channel" value="slack">
+                        <div class="mb-3">
+                            <label class="form-label">Webhook URL</label>
+                            <input type="url" class="form-control" name="webhook_url" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Slack Configuration</button>
+                        <button type="button" class="btn btn-info test-channel" data-channel="slack">Test Slack</button>
+                    </form>
+                </div>
+
+                <!-- Discord Configuration -->
+                <div class="tab-pane fade" id="discord" role="tabpanel">
+                    <form id="discord-config-form" class="channel-form">
+                        <input type="hidden" name="channel" value="discord">
+                        <div class="mb-3">
+                            <label class="form-label">Webhook URL</label>
+                            <input type="url" class="form-control" name="webhook_url" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Discord Configuration</button>
+                        <button type="button" class="btn btn-info test-channel" data-channel="discord">Test Discord</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Types Configuration -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4 class="mb-0">Alert Types Configuration</h4>
+        </div>
+        <div class="card-body">
+            <form id="alert-types-form">
+                {% for alert_type in alert_types %}
+                <div class="mb-3">
+                    <label class="form-label">{{ alert_type.value }}</label>
+                    <div class="channel-checkboxes">
+                        {% for channel in channels %}
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" 
+                                   name="{{ alert_type.value }}" 
+                                   value="{{ channel.value }}" 
+                                   id="{{ alert_type.value }}_{{ channel.value }}">
+                            <label class="form-check-label" for="{{ alert_type.value }}_{{ channel.value }}">
+                                {{ channel.value }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-primary">Save Alert Type Configuration</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Rate Limits Configuration -->
+    <div class="card">
+        <div class="card-header">
+            <h4 class="mb-0">Rate Limits Configuration</h4>
+        </div>
+        <div class="card-body">
+            <form id="rate-limits-form">
+                {% for alert_type in alert_types %}
+                <div class="mb-3">
+                    <label class="form-label">{{ alert_type.value }} (seconds)</label>
+                    <input type="number" class="form-control" name="{{ alert_type.value }}" 
+                           value="3600" min="0">
+                </div>
+                {% endfor %}
+                <button type="submit" class="btn btn-primary">Save Rate Limits</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Alert Messages -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 5">
+    <div id="alertToast" class="toast" role="alert">
+        <div class="toast-header">
+            <strong class="me-auto">Notification</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body"></div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/alerts_config.js') }}"></script>
+{% endblock %}
+{% endblock %}
