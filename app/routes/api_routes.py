@@ -16,8 +16,9 @@ bp = Blueprint('api', __name__)
 def get_state():
     """Get current system state"""
     try:
-        # Use the existing get_system_state method which has all the info we need
         state = pump_controller.get_system_state()
+        # Add reverse mode state to the response
+        state['well_pump_reverse'] = GPIOManager.get_well_pump_reverse_state()
         return jsonify(state)
     except Exception as e:
         import traceback
@@ -130,5 +131,21 @@ def change_mode():
             
         return jsonify(result)
         
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@bp.route('/well-pump-reverse', methods=['POST'])
+@login_required
+def toggle_well_pump_reverse():
+    if not current_user.has_role(UserRole.ADMINISTRATOR):
+        return jsonify({'status': 'error', 'message': 'Administrator privileges required'}), 403
+        
+    try:
+        data = request.get_json()
+        if not data or 'enabled' not in data:
+            return jsonify({'status': 'error', 'message': 'Enabled state not specified'}), 400
+        
+        result = GPIOManager.set_well_pump_reverse(bool(data['enabled']))
+        return jsonify(result)
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

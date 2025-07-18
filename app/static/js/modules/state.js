@@ -13,12 +13,17 @@ export function updateState() {
             console.log('State update received:', data);
             
             // Update different components
-            // Only update mode if we're not in the middle of a mode change
             if (!document.getElementById('modeConfirmModal').classList.contains('show')) {
                 updateModeDisplay(data.current_mode);
             }
             updateTankDisplays(data);
             updatePumpDisplays(data);
+            
+            // Update reverse mode toggle if it exists
+            const reverseToggle = document.getElementById('well-pump-reverse-toggle');
+            if (reverseToggle && typeof data.well_pump_reverse !== 'undefined') {
+                reverseToggle.checked = data.well_pump_reverse;
+            }
         })
         .catch(error => {
             console.error('Error updating state:', error);
