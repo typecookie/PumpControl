@@ -63,13 +63,16 @@ def get_gpio_states():
             'pumps': {
                 'well': {
                     'pin': WELL_PUMP,
-                    'value': GPIOManager.get_pump_state(WELL_PUMP)
+                    'value': GPIOManager.get_pump_state(WELL_PUMP),  # Added comma
+                    'reverse_mode': GPIOManager.get_well_pump_reverse_state(),  # Added comma
+                    'output_inverted': GPIOManager.get_well_output_invert_state()
                 },
                 'distribution': {
                     'pin': DIST_PUMP,
                     'value': GPIOManager.get_pump_state(DIST_PUMP)
                 }
             }
+
         }
         return jsonify(states)
     except Exception as e:
@@ -146,6 +149,57 @@ def toggle_well_pump_reverse():
             return jsonify({'status': 'error', 'message': 'Enabled state not specified'}), 400
         
         result = GPIOManager.set_well_pump_reverse(bool(data['enabled']))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@bp.route('/pump/invert', methods=['POST'])
+@login_required
+def toggle_pump_invert():
+    if not current_user.has_role(UserRole.ADMINISTRATOR):
+        return jsonify({'status': 'error', 'message': 'Administrator privileges required'}), 403
+        
+    try:
+        data = request.get_json()
+        if not data or 'pump' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Pump type not specified'
+            }), 400
+            
+        pump_type = data['pump']
+        if pump_type != 'well':  # Only well pump supports inversion
+            return jsonify({
+                'status': 'error',
+                'message': 'Pump inversion is only supported for well pump'
+            }), 400
+            
+        current_state = GPIOManager.get_well_pump_reverse_state()
+        GPIOManager.set_well_pump_reverse(not current_state)
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Well pump output inversion {"enabled" if not current_state else "disabled"}',
+            'inverted': not current_state
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Error inverting pump output: {str(e)}'
+        }), 500
+@bp.route('/pump/output-invert', methods=['POST'])
+@login_required
+def toggle_pump_output_invert():
+    if not current_user.has_role(UserRole.ADMINISTRATOR):
+        return jsonify({'status': 'error', 'message': 'Administrator privileges required'}), 403
+        
+    try:
+        data = request.get_json()
+        if not data or 'enabled' not in data:
+            return jsonify({'status': 'error', 'message': 'Enabled state not specified'}), 400
+        
+        result = GPIOManager.set_well_output_invert(bool(data['enabled']))
         return jsonify(result)
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

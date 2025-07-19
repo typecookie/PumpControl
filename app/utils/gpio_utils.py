@@ -10,6 +10,7 @@ from app.utils.config_utils import (
 class GPIOManager:
     _initialized = False
     _reverse_well_pump = False
+    _invert_well_output = False  # New attribute for output inversion
     _config_file = os.path.join(os.path.expanduser('~'), '.pump_control', 'gpio_config.json')
 
     @classmethod
@@ -17,7 +18,8 @@ class GPIOManager:
         """Save GPIO configuration to file"""
         try:
             config = {
-                'reverse_well_pump': cls._reverse_well_pump
+                'reverse_well_pump': cls._reverse_well_pump,
+                'invert_well_output': cls._invert_well_output  # Add to config
             }
             os.makedirs(os.path.dirname(cls._config_file), exist_ok=True)
             with open(cls._config_file, 'w') as f:
@@ -34,51 +36,40 @@ class GPIOManager:
                 with open(cls._config_file, 'r') as f:
                     config = json.load(f)
                 cls._reverse_well_pump = config.get('reverse_well_pump', False)
-                print(f"GPIO configuration loaded - Reverse mode: {cls._reverse_well_pump}")
+                cls._invert_well_output = config.get('invert_well_output', False)  # Load from config
+                print(f"GPIO configuration loaded - Reverse mode: {cls._reverse_well_pump}, Output inversion: {cls._invert_well_output}")
             else:
                 print("No GPIO configuration found, using defaults")
         except Exception as e:
             print(f"Error loading GPIO configuration: {e}")
 
     @classmethod
-    def get_well_pump_reverse_state(cls):
-        """Get current reverse mode state"""
-        return cls._reverse_well_pump
+    def get_well_output_invert_state(cls):
+        """Get current output inversion state"""
+        return cls._invert_well_output
 
     @classmethod
-    def set_well_pump_reverse(cls, enabled):
-        """Enable or disable well pump reverse mode"""
-        cls._reverse_well_pump = enabled
-        cls._save_config()  # Save the new state
-        print(f"Well pump reverse mode {'enabled' if enabled else 'disabled'}")
-        return {"status": "success", "reverse_mode": enabled}
-
-    @classmethod
-    def get_pump_state(cls, pin):
-        """Get pump state, accounting for reverse mode
-        Returns the LOGICAL state (what the user expects to see)
-        """
-        try:
-            physical_state = bool(GPIO.input(pin))
-            logical_state = physical_state
-            if pin == WELL_PUMP and cls._reverse_well_pump:
-                logical_state = not physical_state
-            print(f"Pump state - Pin: {pin}, Physical: {physical_state}, Logical: {logical_state}, Reverse: {cls._reverse_well_pump}")
-            return logical_state
-        except Exception as e:
-            print(f"Error getting pump state: {e}")
-            return False
+    def set_well_output_invert(cls, enabled):
+        """Enable or disable well pump output inversion"""
+        cls._invert_well_output = enabled
+        cls._save_config()
+        print(f"Well pump output inversion {'enabled' if enabled else 'disabled'}")
+        return {"status": "success", "invert_mode": enabled}
 
     @classmethod
     def set_pump(cls, pin, state):
-        """Set pump state with reverse mode support
-        state: The LOGICAL state (what the user wants)
-        """
+        """Set pump state with both reverse mode and output inversion support"""
         try:
             desired_logical_state = bool(state)
             physical_state = desired_logical_state
+            
+            # Apply reverse logic if enabled (for operation mode)
             if pin == WELL_PUMP and cls._reverse_well_pump:
-                physical_state = not desired_logical_state
+                physical_state = not physical_state
+                
+            # Apply output inversion if enabled (for hardware)
+            if pin == WELL_PUMP and cls._invert_well_output:
+                physical_state = not physical_state
             
             gpio_state = GPIO.HIGH if physical_state else GPIO.LOW
             GPIO.output(pin, gpio_state)
@@ -91,11 +82,39 @@ class GPIOManager:
                   f"Physical: {physical_state}, "
                   f"Actual: {actual_physical_state}, "
                   f"Reverse: {cls._reverse_well_pump}, "
+                  f"Inverted: {cls._invert_well_output}, "
                   f"Success: {success}")
             
             return success
         except Exception as e:
             print(f"Error setting pump state: {e}")
+            return False
+
+    @classmethod
+    def get_pump_state(cls, pin):
+        """Get pump state, accounting for both reverse mode and output inversion
+        Returns the LOGICAL state (what the user expects to see)
+        """
+        try:
+            physical_state = bool(GPIO.input(pin))
+            logical_state = physical_state
+            
+            # Apply both reverse logic and output inversion for well pump
+            if pin == WELL_PUMP:
+                if cls._reverse_well_pump:
+                    logical_state = not logical_state
+                if cls._invert_well_output:
+                    logical_state = not logical_state
+                
+            print(f"Getting pump state - Pin: {pin}, "
+                  f"Physical: {physical_state}, "
+                  f"Logical: {logical_state}, "
+                  f"Reverse: {cls._reverse_well_pump if pin == WELL_PUMP else False}, "
+                  f"Inverted: {cls._invert_well_output if pin == WELL_PUMP else False}")
+              
+            return logical_state
+        except Exception as e:
+            print(f"Error getting pump state: {e}")
             return False
 
     @staticmethod
@@ -151,3 +170,16 @@ class GPIOManager:
                 cls._initialized = False
                 return False
         return True
+
+    @classmethod
+    def get_well_pump_reverse_state(cls):
+        """Get current reverse mode state"""
+        return cls._reverse_well_pump
+
+    @classmethod
+    def set_well_pump_reverse(cls, enabled):
+        """Enable or disable well pump reverse mode"""
+        cls._reverse_well_pump = enabled
+        cls._save_config()
+        print(f"Well pump reverse mode {'enabled' if enabled else 'disabled'}")
+        return {"status": "success", "reverse_mode": enabled}

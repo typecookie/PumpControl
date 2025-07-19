@@ -35,7 +35,7 @@ class GPIOController(Controller):
         """Get all pump states"""
         return {
             'well_pump': self.gpio_manager.get_pump_state(WELL_PUMP),
-            'dist_pump': self.gpio_manager.get_pump_state(DIST_PUMP)
+            'dist_pump': self.gpio_controller.get_pump_state(DIST_PUMP)
         }
 
     def set_pump_state(self, pump_name, state):

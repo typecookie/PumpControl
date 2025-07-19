@@ -161,14 +161,23 @@ def test_alert():
                 'message': f'Channel {channel.value} not configured'
             }), 400
             
-        from ..utils.notification_service import NotificationService
+        from ..services.notification_service import NotificationService
         service = NotificationService()
-        service.send_test_message(channel)
+        success = service.send_test_message(
+            channel,
+            "This is a test message from the Water System Alert Configuration"
+        )
         
-        return jsonify({
-            'status': 'success',
-            'message': f'Test message sent to {channel.value}'
-        })
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': f'Test message sent to {channel.value}'
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': f'Failed to send test message to {channel.value}'
+            }), 500
         
     except Exception as e:
         current_app.logger.error(f"Error sending test alert: {str(e)}")
