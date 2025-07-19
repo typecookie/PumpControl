@@ -47,6 +47,31 @@ class AlertConfig:
         # Load existing configuration
         self._load_config()
 
+    def get_serializable_config(self) -> dict:
+        """Get configuration in a JSON-serializable format"""
+        try:
+            return {
+                'channels': {
+                    channel.value: config 
+                    for channel, config in self.channels.items()
+                } or {},
+                'alert_types': {
+                    alert_type.value: [c.value for c in channels]
+                    for alert_type, channels in self.alert_types.items()
+                } or {},
+                'rate_limits': {
+                    alert_type.value: seconds
+                    for alert_type, seconds in self.rate_limits.items()
+                } or {}
+            }
+        except Exception as e:
+            logger.error(f"Error serializing config: {e}")
+            return {
+                'channels': {},
+                'alert_types': {},
+                'rate_limits': {}
+            }
+
     def _load_config(self) -> None:
         """Load configuration from file"""
         try:

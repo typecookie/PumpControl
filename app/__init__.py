@@ -4,8 +4,8 @@ from .utils.gpio_utils import GPIOManager
 from .controllers.pump_controller import PumpController
 from .controllers import Controller
 from .utils.user_manager import UserManager
-from .routes.alert_routes import bp as alert_api_bp
-from .routes.alerts_config import bp as alert_config_bp
+from .routes.alert_routes import bp as alerts_api_bp
+from .routes.alerts_config import bp as alerts_config_ui_bp
 
 # Initialize singleton controller
 pump_controller = PumpController()
@@ -42,8 +42,10 @@ def create_app():
         app.register_blueprint(main_bp)
         app.register_blueprint(api_bp, url_prefix='/api')
         app.register_blueprint(auth_bp, url_prefix='/auth')
-        app.register_blueprint(alert_api_bp)  # API endpoints for alerts
-        app.register_blueprint(alert_config_bp)  # UI routes for alert configuration
+        
+        # Alert related blueprints
+        app.register_blueprint(alerts_api_bp, url_prefix='/api/alerts')  # API endpoints for alerts
+        app.register_blueprint(alerts_config_ui_bp, name='alert_config')  # UI routes for alert configuration
 
     return app
 

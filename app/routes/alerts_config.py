@@ -3,7 +3,8 @@ from flask_login import login_required
 from ..models.user import operator_required, UserRole
 from ..utils.notification_config import AlertType, AlertChannel
 
-bp = Blueprint('alert_config', __name__, url_prefix='/alerts')
+# Change the blueprint name to be unique
+bp = Blueprint('alerts_config_ui', __name__, url_prefix='/alerts/ui')
 
 @bp.route('/config', methods=['GET'])
 @login_required

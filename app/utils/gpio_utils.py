@@ -106,7 +106,7 @@ class GPIOManager:
     @staticmethod
     def get_sensor_state(pin):
         """Get inverted sensor state (True when closed)"""
-        return not GPIO.input(pin)
+        return GPIO.input(pin)
 
     @classmethod
     def cleanup(cls):

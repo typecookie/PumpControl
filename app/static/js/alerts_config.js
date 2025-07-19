@@ -51,66 +51,40 @@ document.addEventListener('DOMContentLoaded', function() {
             configurations[alertType] = selectedChannels;
         });
 
-        // Send each configuration separately
-        Object.entries(configurations).forEach(([alertType, channels]) => {
-            fetch('/api/alerts/types', {
+        const savePromises = Object.entries(configurations).map(([alertType, channels]) => {
+            return fetch('/api/alerts/types', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json'
                 },
                 body: JSON.stringify({
                     alert_type: alertType,
                     channels: channels
                 })
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showToast('success', 'Alert types configuration saved');
+            .then(async response => {
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.message || `Error saving ${alertType}`);
+                    }
+                    return data;
                 } else {
-                    showToast('error', 'Error saving alert types: ' + data.message);
+                    throw new Error(`Invalid response type for ${alertType}`);
                 }
-            })
-            .catch(error => {
-                showToast('error', 'Error saving alert types: ' + error);
             });
         });
-    });
 
-    // Rate limits configuration
-    document.getElementById('rate-limits-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData.entries());
-
-        // Set default rate limits for specific channels
-        data['tank_error'] = Math.min(data['tank_error'], 600);  // 10 minutes
-        data['system_error'] = Math.min(data['system_error'], 600);  // 10 minutes
-        data['tank_empty'] = Math.min(data['tank_empty'], 3600);  // 1 hour
-
-        Object.entries(data).forEach(([alertType, seconds]) => {
-            fetch('/api/alerts/rate-limits', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    alert_type: alertType,
-                    seconds: parseInt(seconds)
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showToast('success', 'Rate limits saved successfully');
-                } else {
-                    showToast('error', 'Error saving rate limits: ' + data.message);
-                }
+        Promise.all(savePromises)
+            .then(() => {
+                showToast('success', 'All alert types saved successfully');
             })
             .catch(error => {
-                showToast('error', 'Error saving rate limits: ' + error);
+                console.error('Error saving alert types:', error);
+                showToast('error', 'Error saving alert types: ' + error.message);
             });
-        });
     });
 
     // Test channel buttons
@@ -141,20 +115,34 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function loadConfiguration() {
     fetch('/api/alerts/config')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            if (data.status === 'error') {
+                throw new Error(data.message || 'Unknown error occurred');
+            }
+
+            // Ensure we have objects to work with
+            const channels = data.channels || {};
+            const alertTypes = data.alert_types || {};
+            const rateLimits = data.rate_limits || {};
+
             // Populate channel configurations
-            Object.entries(data.channels).forEach(([channel, config]) => {
+            Object.entries(channels).forEach(([channel, config]) => {
                 const form = document.querySelector(`#${channel}-config-form`);
-                if (form) {
+                if (form && config) {
                     Object.entries(config).forEach(([key, value]) => {
                         const input = form.querySelector(`[name="${key}"]`);
                         if (input) {
                             if (key === 'to_emails' && Array.isArray(value)) {
                                 input.value = value.join(', ');
-                            } else if (key === 'password') {
+                            } else if (key === 'password' && value) {
                                 input.value = '********';
-                            } else {
+                            } else if (value !== null && value !== undefined) {
                                 input.value = value;
                             }
                         }
@@ -163,23 +151,43 @@ function loadConfiguration() {
             });
 
             // Populate alert type checkboxes
-            Object.entries(data.alert_types).forEach(([alertType, channels]) => {
-                channels.forEach(channel => {
-                    const checkbox = document.querySelector(`#${alertType}_${channel}`);
-                    if (checkbox) {
-                        checkbox.checked = true;
-                    }
-                });
+            Object.entries(alertTypes).forEach(([alertType, channels]) => {
+                if (Array.isArray(channels)) {
+                    channels.forEach(channel => {
+                        const checkbox = document.querySelector(`#${alertType}_${channel}`);
+                        if (checkbox) {
+                            checkbox.checked = true;
+                        }
+                    });
+                }
+            });
+
+            // Populate rate limits if they exist
+            Object.entries(rateLimits).forEach(([alertType, limit]) => {
+                const input = document.querySelector(`input[name="${alertType}"]`);
+                if (input && limit !== null && limit !== undefined) {
+                    input.value = limit;
+                }
             });
         })
         .catch(error => {
-            showToast('error', 'Error loading configuration: ' + error);
+            console.error('Error loading configuration:', error);
+            showToast('error', 'Error loading configuration: ' + error.message);
         });
 }
 
 function showToast(type, message) {
     const toast = document.getElementById('alertToast');
+    if (!toast) {
+        console.error('Toast element not found');
+        return;
+    }
+    
     const toastBody = toast.querySelector('.toast-body');
+    if (!toastBody) {
+        console.error('Toast body element not found');
+        return;
+    }
     
     toast.classList.remove('bg-success', 'bg-danger');
     toast.classList.add(type === 'success' ? 'bg-success' : 'bg-danger');
