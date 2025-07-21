@@ -94,6 +94,7 @@ server {
         alias /opt/pump-control/app/static/;
     }
 }
+
 EOF
 
 # Enable the nginx site
