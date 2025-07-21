@@ -23,8 +23,8 @@ max_requests_jitter = 50
 proc_name = 'pump-control'
 
 # Logging
-accesslog = 'logs/access.log'
-errorlog = 'logs/error.log'
+accesslog = '/opt/pump-control/logs/access.log'
+errorlog = '/opt/pump-control/logs/error.log'
 loglevel = 'info'
 
 # Server mechanics

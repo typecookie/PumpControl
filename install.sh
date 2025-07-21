@@ -4,7 +4,7 @@
 # For Raspberry Pi running Raspbian
 
 # Exit on any error
-set -e
+set -e 
 
 # Get current user
 CURRENT_USER=$(whoami)
@@ -161,6 +161,7 @@ sudo touch /opt/pump-control/logs/supervisor.err.log
 sudo touch /opt/pump-control/logs/supervisor.out.log
 sudo touch /opt/pump-control/logs/nginx-access.log
 sudo touch /opt/pump-control/logs/nginx-error.log
+sudo touch
 sudo chown $CURRENT_USER:$CURRENT_USER /opt/pump-control/logs/*.log
 sudo chmod 644 /opt/pump-control/logs/*.log
 EOF
