@@ -5,8 +5,7 @@ import os
 from jinja2.lexer import TOKEN_DOT
 
 # Server socket settings
-bind = "0.0.0.0:5000"
-#TODO: 'change to 127.0.0.1:8000'
+bind = "127.0.0.1:8000"
 backlog = 2048
 
 # Worker settings
