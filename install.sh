@@ -27,8 +27,12 @@ sudo apt-get install -y \
     python3-pip \
     python3-venv \
     git \
-    nginx \
-    supervisor
+    nginx
+
+# Remove supervisor installation and configuration
+# Delete or comment out these lines:
+# sudo apt-get install supervisor
+# sudo tee /etc/supervisor/conf.d/pump-control.conf...
 
 # Create application directory
 echo "Creating application directory..."
@@ -63,24 +67,7 @@ echo "Creating required directories..."
 mkdir -p /home/$CURRENT_USER/.pump_control
 mkdir -p /opt/pump-control/logs
 
-# Setup supervisor configuration
-echo "Configuring supervisor..."
-sudo tee /etc/supervisor/conf.d/pump-control.conf << EOF
-[program:pump-control]
-directory=/opt/pump-control/app
-command=/opt/pump-control/venv/bin/gunicorn -c gunicorn_config.py 'app:create_app()'
-user=$CURRENT_USER
-autostart=true
-autorestart=true
-stderr_logfile=/opt/pump-control/logs/supervisor.err.log
-stdout_logfile=/opt/pump-control/logs/supervisor.out.log
-environment=PATH="/opt/pump-control/venv/bin"
-startsecs=5
-stopwaitsecs=10
-EOF
-
-# Setup nginx configuration
-echo "Configuring nginx..."
+# Modify the nginx configuration block to:
 sudo tee /etc/nginx/sites-available/pump-control << EOF
 server {
     listen 80;
@@ -90,10 +77,21 @@ server {
     error_log /opt/pump-control/logs/nginx-error.log;
 
     location / {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_pass http://127.0.0.1:8000;  # Changed to port 8000
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Add static files location
+    location /static/ {
+        alias /opt/pump-control/app/static/;
     }
 }
 EOF
@@ -105,19 +103,24 @@ sudo rm -f /etc/nginx/sites-enabled/default
 # Create systemd service for auto-start
 echo "Creating systemd service..."
 sudo tee /etc/systemd/system/pump-control.service << EOF
-[Unit]
+[[Unit]
 Description=Pump Control System
 After=network.target
 
 [Service]
 Type=simple
-User=$CURRENT_USER
-Group=$CURRENT_USER
+User=#CURRENT_USER
+Group=#CURRENT_USER
 WorkingDirectory=/opt/pump-control/app
-Environment="PATH=/opt/pump-control/venv/bin"
-ExecStart=/opt/pump-control/venv/bin/gunicorn -c gunicorn_config.py 'app:create_app()'
-Restart=always
-RestartSec=10
+Environment="PATH=/opt/pump-control/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/opt/pump-control/app"
+Environment="FLASK_APP=app"
+Environment="FLASK_ENV=production"
+ExecStart=/opt/pump-control/venv/bin/gunicorn --config /opt/pump-control/app/gunicorn_config.py 'app:create_app()'
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/opt/pump-control/logs/gunicorn.log
+StandardError=append:/opt/pump-control/logs/gunicorn.err
 
 [Install]
 WantedBy=multi-user.target
@@ -135,6 +138,9 @@ sudo touch /opt/pump-control/logs/supervisor.err.log
 sudo touch /opt/pump-control/logs/supervisor.out.log
 sudo touch /opt/pump-control/logs/nginx-access.log
 sudo touch /opt/pump-control/logs/nginx-error.log
+sudo touch /opt/pump-control/logs/access.log
+sudo touch /opt/pump-control/logs/gunicorn.log
+sudo touch /opt/pump-control/logs/error.log
 sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/pump-control/logs
 sudo chmod 755 /opt/pump-control/logs
 sudo chmod 644 /opt/pump-control/logs/*.log
@@ -147,8 +153,6 @@ fi
 
 # Create maintenance scripts
 echo "Creating maintenance scripts..."
-
-# Create fix-permissions script
 sudo tee /opt/pump-control/fix-permissions.sh << EOF
 #!/bin/bash
 sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/pump-control/logs
@@ -160,7 +164,7 @@ sudo touch /opt/pump-control/logs/nginx-error.log
 sudo chown $CURRENT_USER:$CURRENT_USER /opt/pump-control/logs/*.log
 sudo chmod 644 /opt/pump-control/logs/*.log
 EOF
-chmod +x /opt/pump-control/fix-permissions.sh
+sudo chmod +x /opt/pump-control/fix-permissions.sh
 
 # Create restart script
 sudo tee /opt/pump-control/restart.sh << EOF
@@ -168,35 +172,30 @@ sudo tee /opt/pump-control/restart.sh << EOF
 echo "Stopping services..."
 sudo systemctl stop pump-control
 sudo systemctl stop nginx
-sudo supervisorctl stop all
 
 echo "Fixing permissions..."
 /opt/pump-control/fix-permissions.sh
 
 echo "Restarting services..."
 sudo systemctl daemon-reload
-sudo supervisorctl reread
-sudo supervisorctl update
 sudo systemctl start nginx
 sudo systemctl start pump-control
 
 echo "Service status:"
 sudo systemctl status pump-control
 EOF
-chmod +x /opt/pump-control/restart.sh
+sudo chmod +x /opt/pump-control/restart.sh
 
 # Create uninstall script
 echo "Creating uninstall script..."
-tee /opt/pump-control/uninstall.sh << EOF
+sudo tee /opt/pump-control/uninstall.sh << EOF
 #!/bin/bash
 echo "Stopping services..."
 sudo systemctl stop pump-control
 sudo systemctl stop nginx
-sudo supervisorctl stop pump-control
 
 echo "Removing files..."
 sudo rm -rf /opt/pump-control
-sudo rm -f /etc/supervisor/conf.d/pump-control.conf
 sudo rm -f /etc/nginx/sites-available/pump-control
 sudo rm -f /etc/nginx/sites-enabled/pump-control
 sudo rm -f /etc/systemd/system/pump-control.service
@@ -204,12 +203,10 @@ sudo rm -rf /home/$CURRENT_USER/.pump_control
 
 echo "Reloading services..."
 sudo systemctl daemon-reload
-sudo supervisorctl reread
-sudo supervisorctl update
 
 echo "Uninstall complete"
 EOF
-chmod +x /opt/pump-control/uninstall.sh
+sudo chmod +x /opt/pump-control/uninstall.sh
 
 # Initial service start
 echo "Starting services..."
@@ -220,14 +217,17 @@ sudo systemctl enable nginx
 # Stop any running instances
 sudo systemctl stop pump-control
 sudo systemctl stop nginx
-sudo supervisorctl stop all
+# sudo supervisorctl stop all
 
 # Run permission fix
 /opt/pump-control/fix-permissions.sh
 
+# Update the service start section to remove supervisor:
+# Remove or comment out these lines:
+# sudo supervisorctl reread
+# sudo supervisorctl update
+
 # Start services
-sudo supervisorctl reread
-sudo supervisorctl update
 sudo systemctl start nginx
 sudo systemctl start pump-control
 
