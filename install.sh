@@ -103,14 +103,14 @@ sudo rm -f /etc/nginx/sites-enabled/default
 # Create systemd service for auto-start
 echo "Creating systemd service..."
 sudo tee /etc/systemd/system/pump-control.service << EOF
-[[Unit]
+[Unit]
 Description=Pump Control System
 After=network.target
 
 [Service]
 Type=simple
-User=#CURRENT_USER
-Group=#CURRENT_USER
+User=$CURRENT_USER
+Group=$CURRENT_USER
 WorkingDirectory=/opt/pump-control/app
 Environment="PATH=/opt/pump-control/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH=/opt/pump-control/app"
@@ -124,6 +124,7 @@ StandardError=append:/opt/pump-control/logs/gunicorn.err
 
 [Install]
 WantedBy=multi-user.target
+
 EOF
 
 # Setup permissions
