@@ -1,5 +1,6 @@
 import threading
 import time
+from datetime import datetime
 
 # Local imports
 from .base_controller import Controller
@@ -17,7 +18,7 @@ from ..utils.config_utils import (
 )
 from ..models.tank_state import TankState
 from .interfaces import IPumpController
-from ..services.notification_service import NotificationService, AlertType  # New import
+from ..services.notification_service import NotificationService, AlertType
 
 class PumpController(IPumpController):
     _instance = None
@@ -40,7 +41,7 @@ class PumpController(IPumpController):
             self.current_mode = self.mode_controller.get_current_mode()
 
             # Initialize notification service
-            self.notification_service = NotificationService()  # New line
+            self.notification_service = NotificationService()
 
             # Initialize GPIO first
             if not GPIOManager.initialize():
@@ -95,50 +96,62 @@ class PumpController(IPumpController):
         print("Pump controller stopped")
 
     def _update_tank_states(self):
-        """Update tank states based on sensor readings"""
         try:
-            # [Existing summer tank logic]
+            # Get sensor states with error checking
             summer_high = GPIOManager.get_sensor_state(SUMMER_HIGH)
+            if summer_high is None:
+                raise ValueError("Failed to read summer high sensor")
+            
             summer_low = GPIOManager.get_sensor_state(SUMMER_LOW)
+            if summer_low is None:
+                raise ValueError("Failed to read summer low sensor")
+            
             summer_empty = GPIOManager.get_sensor_state(SUMMER_EMPTY)
+            if summer_empty is None:
+                raise ValueError("Failed to read summer empty sensor")
 
-            print(f"Summer tank sensors - High: {summer_high}, Low: {summer_low}, Empty: {summer_empty}")
+            previous_summer_state = self.summer_tank.state
+            previous_winter_state = self.winter_tank.state
 
-            previous_summer_state = self.summer_tank.state if hasattr(self, 'summer_tank') else None
-            previous_winter_state = self.winter_tank.state if hasattr(self, 'winter_tank') else None
-
-            # Summer Tank Logic [no changes]
-            if summer_empty and summer_low and summer_high:
-                self.summer_tank.state = "HIGH"
-            elif summer_empty and summer_low and not summer_high:
-                self.summer_tank.state = "MID"
-            elif summer_empty and not summer_low and not summer_high:
-                self.summer_tank.state = "LOW"
-            elif not summer_empty and not summer_low and not summer_high:
-                self.summer_tank.state = "EMPTY"
-            else:
+            # Summer Tank Logic with validation
+            if None in (summer_empty, summer_low, summer_high):
                 self.summer_tank.state = "ERROR"
+            else:
+                if summer_empty and summer_low and summer_high:
+                    self.summer_tank.state = "HIGH"
+                elif summer_empty and summer_low and not summer_high:
+                    self.summer_tank.state = "MID"
+                elif summer_empty and not summer_low and not summer_high:
+                    self.summer_tank.state = "LOW"
+                elif not summer_empty and not summer_low and not summer_high:
+                    self.summer_tank.state = "EMPTY"
+                else:
+                    self.summer_tank.state = "ERROR"
 
-            print(f"Summer tank state set to: {self.summer_tank.state}")
-
-            # Winter Tank Logic [no changes]
+            # Winter Tank Logic with validation
             winter_high = GPIOManager.get_sensor_state(WINTER_HIGH)
             winter_low = GPIOManager.get_sensor_state(WINTER_LOW)
 
-            print(f"Winter tank sensors - High: {winter_high}, Low: {winter_low}")
-
-            if winter_high and winter_low:
-                self.winter_tank.state = "HIGH"
-            elif not winter_high and winter_low:
-                self.winter_tank.state = "MID"
-            elif not winter_high and not winter_low:
-                self.winter_tank.state = "LOW"
-            else:
+            if None in (winter_high, winter_low):
                 self.winter_tank.state = "ERROR"
+            else:
+                if winter_high and winter_low:
+                    self.winter_tank.state = "HIGH"
+                elif not winter_high and winter_low:
+                    self.winter_tank.state = "MID"
+                elif not winter_high and not winter_low:
+                    self.winter_tank.state = "LOW"
+                else:
+                    self.winter_tank.state = "ERROR"
 
-            print(f"Winter tank state set to: {self.winter_tank.state}")
+            # Retain previous state on error if possible
+            if self.summer_tank.state == "ERROR" and previous_summer_state not in ["ERROR", "unknown"]:
+                self.summer_tank.state = previous_summer_state
+            
+            if self.winter_tank.state == "ERROR" and previous_winter_state not in ["ERROR", "unknown"]:
+                self.winter_tank.state = previous_winter_state
 
-            # New: Send notifications for state changes
+            # Send notifications for state changes
             if previous_summer_state and self.summer_tank.state != previous_summer_state:
                 self.notification_service.send_alert(
                     AlertType.TANK_STATE_CHANGE,
@@ -155,8 +168,17 @@ class PumpController(IPumpController):
 
         except Exception as e:
             print(f"Error updating tank states: {e}")
-            self.summer_tank.state = "ERROR"
-            self.winter_tank.state = "ERROR"
+            # Keep previous states if they exist
+            if hasattr(self, 'summer_tank') and self.summer_tank.state not in ["ERROR", "unknown"]:
+                pass  # Keep existing state
+            else:
+                self.summer_tank.state = "ERROR"
+            
+            if hasattr(self, 'winter_tank') and self.winter_tank.state not in ["ERROR", "unknown"]:
+                pass  # Keep existing state
+            else:
+                self.winter_tank.state = "ERROR"
+
             self.notification_service.send_alert(
                 AlertType.SYSTEM_ERROR,
                 f"Error updating tank states: {str(e)}",
@@ -166,64 +188,49 @@ class PumpController(IPumpController):
     def _control_loop(self):
         """Main control loop"""
         pump_running = False
-        last_mode = None  # Track mode changes
+        last_mode = None
+        error_count = 0
+        max_errors = 3
 
         while self.running:
             try:
-                # Get latest mode from mode controller
+                error_count = 0
                 self.current_mode = self.mode_controller.get_current_mode()
                 self._update_tank_states()
-                print(f"Current mode: {self.current_mode}")
 
-                # Check if mode has changed
                 if last_mode != self.current_mode:
                     print(f"Mode changed from {last_mode} to {self.current_mode}")
-                    self.notification_service.send_alert(  # New notification
+                    self.notification_service.send_alert(
                         AlertType.MODE_CHANGE,
                         f"System mode changed from {last_mode} to {self.current_mode}",
                         {"Previous": last_mode, "Current": self.current_mode}
                     )
                     if self.current_mode == 'CHANGEOVER':
-                        # Set distribution pump ON by default when entering CHANGEOVER mode
                         GPIOManager.set_pump(DIST_PUMP, True)
                     last_mode = self.current_mode
 
-                # [Rest of the control logic remains exactly the same]
                 if self.current_mode == 'SUMMER':
-                    # [Existing summer mode logic]
                     if self.summer_tank.state in ['EMPTY', 'LOW']:
                         pump_running = True
                     elif self.summer_tank.state == 'HIGH':
                         pump_running = False
 
-                    print(f"DEBUG: Summer tank state: {self.summer_tank.state}, Setting well pump to: {pump_running}")
                     GPIOManager.set_pump(WELL_PUMP, pump_running)
 
-                    # Distribution pump control for summer mode
-                    if self.summer_tank.state in ['ERROR', 'EMPTY']:
-                        dist_pump_state = False
-                    else:
-                        dist_pump_state = True  # Run in all other states (HIGH, MID, LOW)
-
-                    print(f"DEBUG: Summer tank state: {self.summer_tank.state}, Setting distribution pump to: {dist_pump_state}")
+                    dist_pump_state = not (self.summer_tank.state in ['ERROR', 'EMPTY'])
                     GPIOManager.set_pump(DIST_PUMP, dist_pump_state)
 
                     if pump_running:
                         self.summer_tank.update_stats(True)
 
                 elif self.current_mode == 'WINTER':
-                    # [Existing winter mode logic]
                     if self.winter_tank.state in ['LOW']:
                         pump_running = True
                     elif self.winter_tank.state == 'HIGH':
                         pump_running = False
 
-                    print(f"DEBUG: Winter tank state: {self.winter_tank.state}, Setting well pump to: {pump_running}")
                     GPIOManager.set_pump(WELL_PUMP, pump_running)
-
-                    # Distribution pump control for winter mode
-                    dist_pump_state = not (self.winter_tank.state == 'ERROR')  # Only turn off on ERROR
-                    print(f"DEBUG: Winter tank state: {self.winter_tank.state}, Setting distribution pump to: {dist_pump_state}")
+                    dist_pump_state = not (self.winter_tank.state == 'ERROR')
                     GPIOManager.set_pump(DIST_PUMP, dist_pump_state)
 
                     if pump_running:
@@ -232,15 +239,12 @@ class PumpController(IPumpController):
                 elif self.current_mode == 'CHANGEOVER':
                     pump_running = self.manual_pump_running
                     GPIOManager.set_pump(WELL_PUMP, pump_running)
-                    print(f"Changeover mode - Manual control: Well Pump {'ON' if pump_running else 'OFF'}, Dist Pump {GPIOManager.get_pump_state(DIST_PUMP)}")
 
-                # Safety check for errors
                 if (self.summer_tank.state == 'ERROR' or self.winter_tank.state == 'ERROR'):
                     pump_running = False
                     GPIOManager.set_pump(WELL_PUMP, False)
-                    GPIOManager.set_pump(DIST_PUMP, False)  # Also stop dist pump on error
-                    print("Tank error state detected - All pumps OFF for safety")
-                    self.notification_service.send_alert(  # New notification
+                    GPIOManager.set_pump(DIST_PUMP, False)
+                    self.notification_service.send_alert(
                         AlertType.TANK_ERROR,
                         "Tank error detected - All pumps stopped for safety",
                         {
@@ -250,16 +254,13 @@ class PumpController(IPumpController):
                         }
                     )
 
-                actual_pump_state = GPIOManager.get_pump_state(WELL_PUMP)
-                actual_dist_state = GPIOManager.get_pump_state(DIST_PUMP)
-                print(f"DEBUG: Final pump state verification: Well pump: {actual_pump_state}, Dist pump: {actual_dist_state}")
-
                 time.sleep(1)
 
             except Exception as e:
-                error_msg = f"Error in control loop: {e}"
+                error_count += 1
+                error_msg = f"Error in control loop ({error_count}/{max_errors}): {e}"
                 print(error_msg)
-                self.notification_service.send_alert(  # New notification
+                self.notification_service.send_alert(
                     AlertType.SYSTEM_ERROR,
                     error_msg,
                     {"Time": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -267,45 +268,80 @@ class PumpController(IPumpController):
                 pump_running = False
                 GPIOManager.set_pump(WELL_PUMP, False)
                 GPIOManager.set_pump(DIST_PUMP, False)
+                
+                if error_count >= max_errors:
+                    print("Too many consecutive errors, restarting controller...")
+                    self.stop()
+                    time.sleep(2)
+                    self.start()
+                    error_count = 0
                 time.sleep(1)
 
     def get_system_state(self):
         """Get current system state with caching"""
         current_time = time.time()
 
-        if self._last_state is None or (current_time - self._state_timestamp) >= 0.5:
-            try:
+        try:
+            if self._last_state is None or (current_time - self._state_timestamp) >= 0.5:
                 if not self.is_running:
-                    self.start()
+                    if not self.start():
+                        return {
+                            'current_mode': 'ERROR',
+                            'summer_tank': {'state': 'ERROR', 'stats': {}},
+                            'winter_tank': {'state': 'ERROR', 'stats': {}},
+                            'well_pump_status': 'ERROR',
+                            'dist_pump_status': 'ERROR',
+                            'thread_running': False
+                        }
 
-                # Get latest mode from mode controller
-                self.current_mode = self.mode_controller.get_current_mode()
-                self._update_tank_states()
+                try:
+                    self.current_mode = self.mode_controller.get_current_mode()
+                except Exception as e:
+                    print(f"Error getting current mode: {e}")
+                    self.current_mode = self._last_state['current_mode'] if self._last_state else 'ERROR'
 
-                state = {
+                prev_summer_state = self.summer_tank.state if hasattr(self, 'summer_tank') else 'unknown'
+                prev_winter_state = self.winter_tank.state if hasattr(self, 'winter_tank') else 'unknown'
+                
+                try:
+                    self._update_tank_states()
+                except Exception as e:
+                    print(f"Error updating tank states: {e}")
+                    if hasattr(self, 'summer_tank'):
+                        self.summer_tank.state = prev_summer_state
+                    if hasattr(self, 'winter_tank'):
+                        self.winter_tank.state = prev_winter_state
+
+                self._last_state = {
                     'current_mode': self.current_mode,
                     'summer_tank': {
-                        'state': self.summer_tank.state,
-                        'stats': self.summer_tank.get_formatted_stats()
+                        'state': self.summer_tank.state if hasattr(self, 'summer_tank') else 'unknown',
+                        'stats': self.summer_tank.get_formatted_stats() if hasattr(self, 'summer_tank') else {}
                     },
                     'winter_tank': {
-                        'state': self.winter_tank.state,
-                        'stats': self.winter_tank.get_formatted_stats()
+                        'state': self.winter_tank.state if hasattr(self, 'winter_tank') else 'unknown',
+                        'stats': self.winter_tank.get_formatted_stats() if hasattr(self, 'winter_tank') else {}
                     },
                     'well_pump_status': 'ON' if GPIOManager.get_pump_state(WELL_PUMP) else 'OFF',
                     'dist_pump_status': 'ON' if GPIOManager.get_pump_state(DIST_PUMP) else 'OFF',
                     'thread_running': self.pump_thread.is_alive() if self.pump_thread else False
                 }
-
-                self._last_state = state
                 self._state_timestamp = current_time
 
-            except Exception as e:
-                print(f"Error getting system state: {e}")
-                if self._last_state is None:
-                    raise
+            return self._last_state
 
-        return self._last_state
+        except Exception as e:
+            print(f"Critical error getting system state: {e}")
+            if self._last_state:
+                return self._last_state
+            return {
+                'current_mode': 'ERROR',
+                'summer_tank': {'state': 'ERROR', 'stats': {}},
+                'winter_tank': {'state': 'ERROR', 'stats': {}},
+                'well_pump_status': 'ERROR',
+                'dist_pump_status': 'ERROR',
+                'thread_running': False
+            }
 
     def set_manual_pump(self, running):
         """Control manual pump in changeover mode"""
@@ -326,14 +362,7 @@ class PumpController(IPumpController):
         return self.running and (self.pump_thread and self.pump_thread.is_alive())
 
     def set_distribution_pump(self, state):
-        """Control distribution pump state
-        
-        Args:
-            state (bool): True to turn on, False to turn off
-            
-        Returns:
-            dict: Status response
-        """
+        """Control distribution pump state"""
         try:
             GPIOManager.set_pump(DIST_PUMP, state)
             actual_state = GPIOManager.get_pump_state(DIST_PUMP)

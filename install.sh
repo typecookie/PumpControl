@@ -171,6 +171,7 @@ install() {
     
     # Copy current directory contents to installation directory
     echo "Installing application files..."
+    sudo mkdir /opt/pump-control
     sudo cp -r . /opt/pump-control/app
     
     # Run setup functions
