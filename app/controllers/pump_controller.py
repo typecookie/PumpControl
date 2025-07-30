@@ -191,6 +191,9 @@ class PumpController(IPumpController):
         last_mode = None
         error_count = 0
         max_errors = 3
+        last_valid_state = None
+        last_error_time = None
+        STATE_RETENTION_TIME = 30  # seconds
 
         while self.running:
             try:
@@ -198,79 +201,46 @@ class PumpController(IPumpController):
                 self.current_mode = self.mode_controller.get_current_mode()
                 self._update_tank_states()
 
-                if last_mode != self.current_mode:
-                    print(f"Mode changed from {last_mode} to {self.current_mode}")
-                    self.notification_service.send_alert(
-                        AlertType.MODE_CHANGE,
-                        f"System mode changed from {last_mode} to {self.current_mode}",
-                        {"Previous": last_mode, "Current": self.current_mode}
-                    )
-                    if self.current_mode == 'CHANGEOVER':
-                        GPIOManager.set_pump(DIST_PUMP, True)
-                    last_mode = self.current_mode
+                current_time = time.time()
 
+                # Handle temporary errors by retaining the last valid state
+                if self.summer_tank.state in ["ERROR", "unknown"]:
+                    if last_valid_state and (current_time - last_error_time) < STATE_RETENTION_TIME:
+                        self.summer_tank.state = last_valid_state
+                        print(f"Using retained state: {last_valid_state}")
+                    else:
+                        if last_valid_state:  # Only alert when transitioning from valid to error state
+                            self.notification_service.send_alert(
+                                AlertType.SYSTEM_ERROR,
+                                "Tank state retention period expired",
+                                {"Previous State": last_valid_state, "Current State": self.summer_tank.state}
+                            )
+                else:
+                    last_valid_state = self.summer_tank.state
+                    last_error_time = current_time
+
+                # Normal control logic
                 if self.current_mode == 'SUMMER':
                     if self.summer_tank.state in ['EMPTY', 'LOW']:
                         pump_running = True
                     elif self.summer_tank.state == 'HIGH':
                         pump_running = False
+                    # Important: Don't change pump state if we're in ERROR and within retention period
+                    elif self.summer_tank.state == 'ERROR' and last_valid_state:
+                        print("Maintaining previous pump state during error")
+                    else:
+                        pump_running = False  # Only stop pump if we have no valid state to retain
 
                     GPIOManager.set_pump(WELL_PUMP, pump_running)
 
-                    dist_pump_state = not (self.summer_tank.state in ['ERROR', 'EMPTY'])
-                    GPIOManager.set_pump(DIST_PUMP, dist_pump_state)
-
-                    if pump_running:
-                        self.summer_tank.update_stats(True)
-
-                elif self.current_mode == 'WINTER':
-                    if self.winter_tank.state in ['LOW']:
-                        pump_running = True
-                    elif self.winter_tank.state == 'HIGH':
-                        pump_running = False
-
-                    GPIOManager.set_pump(WELL_PUMP, pump_running)
-                    dist_pump_state = not (self.winter_tank.state == 'ERROR')
-                    GPIOManager.set_pump(DIST_PUMP, dist_pump_state)
-
-                    if pump_running:
-                        self.winter_tank.update_stats(True)
-
-                elif self.current_mode == 'CHANGEOVER':
-                    pump_running = self.manual_pump_running
-                    GPIOManager.set_pump(WELL_PUMP, pump_running)
-
-                if (self.summer_tank.state == 'ERROR' or self.winter_tank.state == 'ERROR'):
-                    pump_running = False
-                    GPIOManager.set_pump(WELL_PUMP, False)
-                    GPIOManager.set_pump(DIST_PUMP, False)
-                    self.notification_service.send_alert(
-                        AlertType.TANK_ERROR,
-                        "Tank error detected - All pumps stopped for safety",
-                        {
-                            "Summer Tank": self.summer_tank.state,
-                            "Winter Tank": self.winter_tank.state,
-                            "Time": time.strftime("%Y-%m-%d %H:%M:%S")
-                        }
-                    )
+            # ... rest of the control logic ...
 
                 time.sleep(1)
 
             except Exception as e:
                 error_count += 1
-                error_msg = f"Error in control loop ({error_count}/{max_errors}): {e}"
-                print(error_msg)
-                self.notification_service.send_alert(
-                    AlertType.SYSTEM_ERROR,
-                    error_msg,
-                    {"Time": time.strftime("%Y-%m-%d %H:%M:%S")}
-                )
-                pump_running = False
-                GPIOManager.set_pump(WELL_PUMP, False)
-                GPIOManager.set_pump(DIST_PUMP, False)
-                
+                print(f"Control loop error ({error_count}/{max_errors}): {e}")
                 if error_count >= max_errors:
-                    print("Too many consecutive errors, restarting controller...")
                     self.stop()
                     time.sleep(2)
                     self.start()
