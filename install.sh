@@ -55,25 +55,37 @@ server {
     listen 80;
     server_name _;
 
+    proxy_connect_timeout 75s;
+    proxy_read_timeout 300s;
+
     access_log /opt/pump-control/logs/nginx-access.log;
     error_log /opt/pump-control/logs/nginx-error.log;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
 
+        # WebSocket support
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # Debug headers
+        proxy_set_header X-Original-Request-Time $request_time;
+        proxy_set_header X-Server-Time $time_local;
     }
 
     location /static/ {
-        alias /opt/pump-control/app/static/;
+        root /opt/pump-control/app/app/;
+        add_header Cache-Control "public, no-transform";
+
     }
 }
+
 EOF
 
     # Enable site and remove default

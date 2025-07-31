@@ -7,15 +7,18 @@ export function initState() {
 }
 
 export function updateState() {
+    console.log('Starting state update...');
     fetch('/api/state')
         .then(response => response.json())
         .then(data => {
-            console.log('State update received:', data);
+            console.log('State data received:', data);
             
-            // Update different components
-            if (!document.getElementById('modeConfirmModal').classList.contains('show')) {
+            // Update mode if modal isn't showing
+            if (!document.getElementById('modeConfirmModal')?.classList.contains('show')) {
                 updateModeDisplay(data.current_mode);
             }
+            
+            // Update tanks and pumps
             updateTankDisplays(data);
             updatePumpDisplays(data);
             
@@ -26,19 +29,6 @@ export function updateState() {
             }
         })
         .catch(error => {
-            console.error('Error updating state:', error);
+            console.error('Error in updateState:', error);
         });
-}
-
-
-// Helper function for stats formatting
-export function formatStats(stats) {
-    return `
-        <p>Today's Runtime: ${stats.today_runtime}</p>
-        <p>Today's Gallons: ${stats.today_gallons}</p>
-        <p>Week Runtime: ${stats.week_runtime}</p>
-        <p>Week Gallons: ${stats.week_gallons}</p>
-        <p>Month Runtime: ${stats.month_runtime}</p>
-        <p>Month Gallons: ${stats.month_gallons}</p>
-    `;
 }
