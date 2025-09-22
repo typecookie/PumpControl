@@ -1,111 +1,96 @@
-from app.utils.config_utils import ConfigManager, MODES
-from app.controllers import Controller
-from .interfaces import IModeController
-import time
+from app.controllers.interfaces import IModeController
+from app.models.tank_state import TankState
+from app.services.notification_service import NotificationService
+from app.controllers.mode_handlers.summer_handler import SummerModeHandler
+from app.controllers.mode_handlers.winter_handler import WinterModeHandler
+from app.controllers.mode_handlers.changeover_handler import ChangeoverModeHandler
+from app.utils.gpio_utils import GPIOManager
 
-class ModeController(Controller, IModeController):
-    def _init(self):
-        """Initialize mode controller"""
-        self.config = ConfigManager.load_config()
-        if 'current_mode' not in self.config:
-            raise ValueError("Invalid config: missing current_mode")
-        self.current_mode = self.config['current_mode']
-        self.mode_change_requested = None
-        
-        # Add mode retention variables
-        self.last_valid_mode = self.current_mode
-        self.last_error_time = None
-        self.MODE_RETENTION_TIME = 30  # seconds
-        
-        print(f"Mode Controller initialized with mode: {self.current_mode}")
+class ModeController(IModeController):
+    def __init__(self):
+        self._current_mode = "SUMMER"
+        self._pump_controller = None
+        self._notification_service = None
+        self._handlers = {}
+        self._current_handler = None
 
-    def get_current_mode(self):
-        """Get current mode with retention logic"""
+    def set_pump_controller(self, controller):
+        """Set pump controller and initialize handlers"""
+        self._pump_controller = controller
+        self._notification_service = NotificationService()
+        
+        # Initialize mode handlers
+        self._handlers = {
+            "SUMMER": SummerModeHandler(self._pump_controller, self._notification_service),
+            "WINTER": WinterModeHandler(self._pump_controller, self._notification_service),
+            "CHANGEOVER": ChangeoverModeHandler(self._pump_controller, self._notification_service)
+        }
+        
+        # Set initial handler
+        self._current_handler = self._handlers.get(self._current_mode)
+        if self._current_handler:
+            self._current_handler.on_mode_enter()
+
+    def get_current_mode(self) -> str:
+        return self._current_mode
+
+    def request_mode_change(self, new_mode: str, confirm: bool = False):
+        """Handle mode change requests"""
+        print(f"Mode change request: new_mode={new_mode}, confirm={confirm}")
+        
+        if new_mode not in ["SUMMER", "WINTER", "CHANGEOVER"]:
+            print(f"Invalid mode specified: {new_mode}")
+            return {"status": "error", "message": "Invalid mode specified"}
+
+        if new_mode == self._current_mode:
+            print(f"System is already in {new_mode} mode")
+            return {"status": "error", "message": f"System is already in {new_mode} mode"}
+
+        if confirm:
+            print(f"Confirming mode change from {self._current_mode} to {new_mode}")
+            # Exit current mode handler
+            if self._current_handler:
+                print(f"Exiting current handler: {type(self._current_handler).__name__}")
+                try:
+                    self._current_handler.on_mode_exit()
+                except Exception as e:
+                    print(f"Error exiting current mode: {e}")
+                    import traceback
+                    print(traceback.format_exc())
+
+            self._current_mode = new_mode
+        
+        # Enter new mode handler
+            self._current_handler = self._handlers.get(new_mode)
+            if self._current_handler:
+                print(f"Entering new handler: {type(self._current_handler).__name__}")
+                try:
+                    self._current_handler.on_mode_enter()
+                except Exception as e:
+                    print(f"Error entering new mode: {e}")
+                    import traceback
+                    print(traceback.format_exc())
+
+            return {"status": "success", "message": f"Mode changed to {new_mode}"}
+        else:
+            print(f"Requesting confirmation for mode change to {new_mode}")
+            return {
+                "status": "confirm",
+                "message": f"Please confirm changing to {new_mode} mode",
+                "data": {"new_mode": new_mode}
+            }
+
+    def handle_mode_controls(self, tank_state):
+        """Route control to appropriate mode handler"""
         try:
-            current_time = time.time()
-            
-            # If current mode is invalid but within retention period, return last valid mode
-            if self.current_mode in [None, 'ERROR', 'unknown']:
-                if (self.last_valid_mode and self.last_error_time and 
-                    current_time - self.last_error_time < self.MODE_RETENTION_TIME):
-                    print(f"Using retained mode: {self.last_valid_mode}")
-                    return self.last_valid_mode
+            print(f"Mode controller handling tank state: {tank_state.state} in mode: {self._current_mode}")
+        
+            if self._current_handler:
+                print(f"Routing to handler: {type(self._current_handler).__name__}")
+                self._current_handler.handle(tank_state)
             else:
-                # Update last valid mode and timestamp
-                self.last_valid_mode = self.current_mode
-                self.last_error_time = current_time
-                
-            return self.current_mode
-            
+                print(f"No handler for current mode: {self._current_mode}")
         except Exception as e:
-            print(f"Error getting mode: {e}")
-            if self.last_valid_mode:
-                return self.last_valid_mode
-            return 'ERROR'
-
-    def request_mode_change(self, new_mode, confirm=False):
-        print(f"Mode change request received - New mode: {new_mode}, Current mode: {self.current_mode}, Confirm: {confirm}")
-        
-        if new_mode not in MODES:
-            print(f"Invalid mode requested: {new_mode}")
-            return {
-                'status': 'error',
-                'message': f'Invalid mode requested: {new_mode}'
-            }, 400
-
-        if not confirm:
-            self.mode_change_requested = new_mode
-            return {
-                'status': 'confirmation_required',
-                'message': f'Confirm changing mode to {MODES[new_mode]}?'
-            }
-
-        try:
-            old_mode = self.current_mode
-            self.current_mode = new_mode
-            self.mode_change_requested = None
-            
-            # Update last valid mode immediately for mode changes
-            self.last_valid_mode = new_mode
-            self.last_error_time = time.time()
-
-            print("Saving current state...")
-            self.save_current_state()
-            
-            # Verify the change
-            ConfigManager.reload_config()
-            saved_config = ConfigManager.load_config()
-            saved_mode = saved_config.get('current_mode')
-            
-            if saved_mode != new_mode:
-                print(f"Mode save verification failed! Config shows {saved_mode}, expected {new_mode}")
-                self.current_mode = old_mode
-                self.last_valid_mode = old_mode  # Reset last valid mode on failure
-                return {
-                    'status': 'error',
-                    'message': 'Failed to persist mode change'
-                }, 500
-
-            print(f"Mode change successful - now in {new_mode} mode")
-            return {
-                'status': 'success',
-                'message': f'Mode changed to {MODES[new_mode]}',
-                'current_mode': new_mode
-            }
-
-        except Exception as e:
-            print(f"Error in mode change: {str(e)}")
-            return {
-                'status': 'error',
-                'message': f'Error changing mode: {str(e)}'
-            }, 500
-    def save_current_state(self):
-        """Save current mode to config"""
-        try:
-            config = ConfigManager.load_config()
-            config['current_mode'] = self.current_mode
-            ConfigManager.save_config(config)
-            print(f"Saved current mode to config: {self.current_mode}")
-        except Exception as e:
-            print(f"Error saving current mode to config: {e}")
-            raise
+            print(f"Error in mode controller: {e}")
+            import traceback
+            print(traceback.format_exc())

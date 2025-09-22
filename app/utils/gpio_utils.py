@@ -124,8 +124,14 @@ class GPIOManager:
 
     @staticmethod
     def get_sensor_state(pin):
-        """Get inverted sensor state (True when closed)"""
-        return GPIO.input(pin)
+        """Get sensor state (True when triggered)"""
+        try:
+            value = GPIO.input(pin)
+            print(f"Reading sensor state for pin {pin}: raw value={value}")
+            return bool(value)
+        except Exception as e:
+            print(f"Error reading sensor state for pin {pin}: {e}")
+            return False
 
     @classmethod
     def cleanup(cls):

@@ -9,8 +9,13 @@ from app.models.tank_state import TankState
 from app.utils.config_utils import *
 from .interfaces import *
 
-mode_controller = ModeController()
+# Create instances
 pump_controller = PumpController()
+mode_controller = ModeController()
+
+# Connect controllers
+mode_controller.set_pump_controller(pump_controller)
+pump_controller.set_mode_controller(mode_controller)
 
 # Force initial config reload
 ConfigManager.reload_config()

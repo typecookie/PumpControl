@@ -1,21 +1,28 @@
 let wellPumpRunning = false;
-let distPumpRunning = true;  // Default to ON for distribution pump
+let distPumpRunning = false;
 let wellPumpReverse = false;
 
 export function initPumpControls() {
     console.log('Initializing pump controls');
     
+    // Find and add event listeners to pump control elements
     const wellPumpToggle = document.getElementById('manual-well-pump-toggle');
     const distPumpToggle = document.getElementById('manual-dist-pump-toggle');
     const reverseToggle = document.getElementById('well-pump-reverse-toggle');
     const outputInvertToggle = document.getElementById('well-pump-output-invert');
     
     if (wellPumpToggle) {
-        wellPumpToggle.addEventListener('click', () => handlePumpToggle('well'));
+        wellPumpToggle.addEventListener('click', () => {
+            console.log('Well pump toggle clicked');
+            handlePumpToggle('well');
+        });
     }
     
     if (distPumpToggle) {
-        distPumpToggle.addEventListener('click', () => handlePumpToggle('dist'));
+        distPumpToggle.addEventListener('click', () => {
+            console.log('Distribution pump toggle clicked');
+            handlePumpToggle('dist');
+        });
     }
 
     // Add reverse toggle handler
@@ -78,13 +85,20 @@ export function initPumpControls() {
 
     // Initial state fetch
     fetchInitialState();
+    console.log('Pump controls initialized');
 }
 
 function fetchInitialState() {
-    console.log('Fetching initial state');
+    console.log('Fetching initial pump state');
     Promise.all([
-        fetch('/api/state').then(r => r.json()),
-        fetch('/api/gpio_states').then(r => r.json())
+        fetch('/api/state').then(r => r.json()).catch(e => {
+            console.error('Error fetching state:', e);
+            return {};
+        }),
+        fetch('/api/gpio_states').then(r => r.json()).catch(e => {
+            console.error('Error fetching GPIO states:', e);
+            return {};
+        })
     ])
     .then(([stateData, gpioData]) => {
         console.log('Initial state loaded:', { state: stateData, gpio: gpioData });
@@ -113,22 +127,23 @@ function fetchInitialState() {
 export function updatePumpDisplays(data) {
     console.log('Updating pump displays with data:', data);
     
-    // Update pump status displays
-    const wellStatus = data.well_pump_status;
-    const distStatus = data.dist_pump_status;
+    // Extract pump states using helper functions for resilience
+    const wellStatus = getWellPumpState(data);
+    const distStatus = getDistPumpState(data);
     
-    console.log('Pump states:', { well: wellStatus, dist: distStatus });
+    console.log('Extracted pump states:', { well: wellStatus, dist: distStatus });
     
-    document.getElementById('well-pump-status').textContent = wellStatus;
-    document.getElementById('dist-pump-status').textContent = distStatus;
+    // Update wellPumpRunning and distPumpRunning state variables
+    wellPumpRunning = wellStatus === 'ON';
+    distPumpRunning = distStatus === 'ON';
+
+    // Update display elements if they exist
+    updatePumpDisplayElement('well-pump-status', wellStatus);
+    updatePumpDisplayElement('dist-pump-status', distStatus);
 
     // Update pump images
     updatePumpImage('well-pump', wellStatus);
     updatePumpImage('dist-pump', distStatus);
-
-    // Update running states (store actual state)
-    wellPumpRunning = wellStatus === 'ON';
-    distPumpRunning = distStatus === 'ON';
 
     // Only show manual controls in CHANGEOVER mode
     const changeoverControls = document.getElementById('changeover-controls');
@@ -150,6 +165,50 @@ export function updatePumpDisplays(data) {
             reverseToggle.checked = wellPumpReverse;
         }
     }
+}
+
+// Helper function to update a pump display element
+function updatePumpDisplayElement(elementId, status) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.textContent = status;
+        
+        // Also update the element's class for styling if needed
+        element.className = status === 'ON' 
+            ? 'pump-status status-on' 
+            : 'pump-status status-off';
+    }
+}
+
+// Helper functions to extract pump states from various data structures
+function getWellPumpState(data) {
+    console.log('Extracting well pump state from:', data);
+    
+    // Try different property paths
+    if (data.well_pump && data.well_pump.state) {
+        return data.well_pump.state;
+    } else if (data.well_pump_status) {
+        return data.well_pump_status;
+    } else if (data.gpio_states && data.gpio_states.pumps && data.gpio_states.pumps.well) {
+        return data.gpio_states.pumps.well.value ? 'ON' : 'OFF';
+    }
+    return 'UNKNOWN';
+}
+
+function getDistPumpState(data) {
+    console.log('Extracting dist pump state from:', data);
+    
+    // Try different property paths
+    if (data.distribution_pump && data.distribution_pump.state) {
+        return data.distribution_pump.state;
+    } else if (data.dist_pump && data.dist_pump.state) {
+        return data.dist_pump.state;
+    } else if (data.dist_pump_status) {
+        return data.dist_pump_status;
+    } else if (data.gpio_states && data.gpio_states.pumps && data.gpio_states.pumps.distribution) {
+        return data.gpio_states.pumps.distribution.value ? 'ON' : 'OFF';
+    }
+    return 'UNKNOWN';
 }
 
 function updatePumpImage(pumpId, status) {
@@ -222,14 +281,32 @@ function handlePumpToggle(pumpType) {
     })
     .then(response => response.json())
     .then(data => {
+        console.log(`${pumpType} pump toggle response:`, data);
+        
         if (data.status === 'success') {
-            console.log(`${pumpType} pump toggle successful:`, data);
+            // Update the UI immediately to reflect the change
+            if (isWell) {
+                wellPumpRunning = data.pump_running || desiredState;
+                updateManualPumpControl('well', wellPumpRunning ? 'ON' : 'OFF');
+                updatePumpDisplayElement('well-pump-status', wellPumpRunning ? 'ON' : 'OFF');
+                updatePumpImage('well-pump', wellPumpRunning ? 'ON' : 'OFF');
+            } else {
+                distPumpRunning = data.pump_running || desiredState;
+                updateManualPumpControl('dist', distPumpRunning ? 'ON' : 'OFF');
+                updatePumpDisplayElement('dist-pump-status', distPumpRunning ? 'ON' : 'OFF');
+                updatePumpImage('dist-pump', distPumpRunning ? 'ON' : 'OFF');
+            }
+            
+            console.log(`${pumpType} pump toggle successful`);
         } else {
             console.error('Failed to toggle pump:', data.message);
+            // Show error to user
+            showToast('error', `Failed to ${desiredState ? 'start' : 'stop'} ${pumpType} pump: ${data.message || 'Unknown error'}`);
         }
     })
     .catch(error => {
         console.error('Error toggling pump:', error);
+        showToast('error', `Error toggling ${pumpType} pump: ${error}`);
     });
 }
 
@@ -244,4 +321,20 @@ function updatePumpButtonStates() {
         wellPumpButton.className = `btn pump-control-button ${displayState ? 'btn-danger' : 'btn-primary'}`;
         wellPumpStatus.textContent = displayState ? 'ON' : 'OFF';
     }
+}
+
+function showToast(type, message) {
+    // Create toast element
+    const toastDiv = document.createElement('div');
+    toastDiv.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed bottom-0 end-0 m-3`;
+    toastDiv.style.zIndex = '1050';
+    toastDiv.textContent = message;
+    document.body.appendChild(toastDiv);
+    
+    // Remove after delay
+    setTimeout(() => {
+        if (document.body.contains(toastDiv)) {
+            toastDiv.remove();
+        }
+    }, 3000);
 }

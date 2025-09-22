@@ -4,8 +4,15 @@ let modeChangeStatus = 'No changes made';
 let modal;
 
 export function initModeControls() {
+    console.log('Initializing mode controls');
+    
     // Initialize the modal
-    modal = new bootstrap.Modal(document.getElementById('modeConfirmModal'));
+    const modalElement = document.getElementById('modeConfirmModal');
+    if (modalElement) {
+        modal = new bootstrap.Modal(modalElement);
+    } else {
+        console.error('Mode confirm modal not found in the DOM');
+    }
     
     // Set up mode buttons click handlers
     document.querySelectorAll('.mode-button').forEach(button => {
@@ -19,16 +26,24 @@ export function initModeControls() {
     });
 
     // Set up mode change confirmation handler
-    document.getElementById('confirm-mode-change').addEventListener('click', function() {
-        console.log('Confirming mode change to:', selectedMode);
-        confirmModeChange();
-    });
+    const confirmBtn = document.getElementById('confirm-mode-change');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', function() {
+            console.log('Confirming mode change to:', selectedMode);
+            confirmModeChange();
+        });
+    }
 
     // Handle modal close/dismiss
-    document.getElementById('modeConfirmModal').addEventListener('hidden.bs.modal', function () {
-        console.log('Modal closed, resetting state');
-        selectedMode = null;
-    });
+    if (modalElement) {
+        modalElement.addEventListener('hidden.bs.modal', function () {
+            console.log('Modal closed, resetting state');
+            selectedMode = null;
+        });
+    }
+
+    // Debug
+    console.log('Mode controls initialized');
 }
 
 export function changeMode(mode) {
@@ -45,18 +60,32 @@ export function changeMode(mode) {
     .then(response => response.json())
     .then(data => {
         console.log('Mode change response:', data);
-        if (data.status === 'confirmation_required') {
+        
+        // Handle different status responses
+        if (data.status === 'confirm') {
+            // Need confirmation - show modal
             const messageElement = document.getElementById('mode-change-message');
             if (messageElement) {
-                messageElement.textContent = data.message;
+                messageElement.textContent = data.message || `Confirm changing to ${mode} mode?`;
             }
-            modal.show();
+            if (modal) {
+                modal.show();
+            } else {
+                console.error('Modal not initialized');
+            }
         } else if (data.status === 'success') {
+            // Mode changed successfully
             lastModeChange = new Date().toLocaleString();
             modeChangeStatus = 'Success: ' + data.message;
-            updateModeDisplay(data.current_mode);
+            updateModeDisplay(data.current_mode || mode);
             updateModeDebug();
+            
+            // Special handling for CHANGEOVER mode
+            if (mode === 'CHANGEOVER') {
+                handleModeChange(mode);
+            }
         } else {
+            // Error handling
             modeChangeStatus = 'Error: ' + (data.message || 'Unknown error');
             updateModeDebug();
         }
@@ -90,7 +119,10 @@ function confirmModeChange() {
     .then(response => response.json())
     .then(data => {
         console.log('Mode change confirmation response:', data);
-        modal.hide();
+        
+        if (modal) {
+            modal.hide();
+        }
         
         if (data.status === 'success') {
             lastModeChange = new Date().toLocaleString();
@@ -101,7 +133,12 @@ function confirmModeChange() {
                 .then(response => response.json())
                 .then(stateData => {
                     console.log('State after mode change:', stateData);
-                    updateModeDisplay(stateData.current_mode);
+                    updateModeDisplay(stateData.current_mode || selectedMode);
+                    
+                    // Special handling for CHANGEOVER mode
+                    if (selectedMode === 'CHANGEOVER') {
+                        handleModeChange(selectedMode);
+                    }
                 })
                 .catch(error => {
                     console.error('Error fetching state after mode change:', error);
@@ -115,7 +152,9 @@ function confirmModeChange() {
         console.error('Error in mode change confirmation:', error);
         modeChangeStatus = 'Error: ' + error;
         updateModeDebug();
-        modal.hide();
+        if (modal) {
+            modal.hide();
+        }
     })
     .finally(() => {
         selectedMode = null;
@@ -124,6 +163,12 @@ function confirmModeChange() {
 
 export function updateModeDisplay(currentMode) {
     console.log('Updating mode display to:', currentMode);
+    
+    if (!currentMode) {
+        console.warn('updateModeDisplay called with undefined or null mode');
+        return;
+    }
+    
     const currentModeElement = document.getElementById('current-mode');
     if (currentModeElement) {
         currentModeElement.textContent = currentMode;
@@ -132,7 +177,11 @@ export function updateModeDisplay(currentMode) {
     // Update mode button highlighting
     document.querySelectorAll('.mode-button').forEach(button => {
         const buttonMode = button.getAttribute('data-mode');
-        button.classList.toggle('active-mode', buttonMode === currentMode);
+        if (buttonMode === currentMode) {
+            button.classList.add('active-mode');
+        } else {
+            button.classList.remove('active-mode');
+        }
     });
 
     updateModeDebug();
@@ -140,7 +189,9 @@ export function updateModeDisplay(currentMode) {
 }
 
 function updateModeDebug() {
-    const currentMode = document.getElementById('current-mode').textContent || 'Unknown';
+    const currentModeEl = document.getElementById('current-mode');
+    const currentMode = currentModeEl ? currentModeEl.textContent : 'Unknown';
+    
     const debugCurrentMode = document.getElementById('debug-current-mode');
     const debugLastModeChange = document.getElementById('debug-last-mode-change');
     const debugModeChangeStatus = document.getElementById('debug-mode-change-status');
@@ -161,25 +212,35 @@ function updateSectionVisibility(mode) {
 }
 
 export function handleModeChange(newMode) {
+    console.log('Handling mode change to:', newMode);
+    
     if (newMode === 'CHANGEOVER') {
         // When entering changeover mode, start the distribution pump
         setTimeout(() => {
+            console.log('Dispatching changeover-mode-entered event');
             const event = new CustomEvent('changeover-mode-entered');
             document.dispatchEvent(event);
         }, 500);  // Small delay to ensure UI is ready
     }
 }
 
-// Add this listener in your initialization code
+// Add this listener when the module loads
 document.addEventListener('changeover-mode-entered', () => {
-    fetch('/api/pump', {
+    console.log('Changeover mode entered event received - starting distribution pump');
+    fetch('/api/distribution_pump', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-            pump_type: 'dist',
             running: true 
         })
-    }).catch(error => console.error('Error starting distribution pump:', error));
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Distribution pump started:', data);
+    })
+    .catch(error => {
+        console.error('Error starting distribution pump:', error);
+    });
 });

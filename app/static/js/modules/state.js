@@ -3,24 +3,43 @@ import { updatePumpDisplays } from './pumps.js';
 import { updateModeDisplay } from './modes.js';
 
 export function initState() {
-    // Initial state setup if needed
+    console.log('Initializing state module');
+    // Any initial state setup if needed
 }
 
 export function updateState() {
     console.log('Starting state update...');
+    
     fetch('/api/state')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             console.log('State data received:', data);
             
-            // Update mode if modal isn't showing
-            if (!document.getElementById('modeConfirmModal')?.classList.contains('show')) {
+            // Check if we have a modal showing - if so, don't update mode display
+            const modeModal = document.getElementById('modeConfirmModal');
+            const isModalShowing = modeModal?.classList.contains('show');
+            
+            if (!isModalShowing && data.current_mode) {
                 updateModeDisplay(data.current_mode);
             }
             
-            // Update tanks and pumps
-            updateTankDisplays(data);
-            updatePumpDisplays(data);
+            // Update tanks and pumps with enhanced error handling
+            try {
+                updateTankDisplays(data);
+            } catch (error) {
+                console.error('Error updating tank displays:', error);
+            }
+            
+            try {
+                updatePumpDisplays(data);
+            } catch (error) {
+                console.error('Error updating pump displays:', error);
+            }
             
             // Update reverse mode toggle if it exists
             const reverseToggle = document.getElementById('well-pump-reverse-toggle');

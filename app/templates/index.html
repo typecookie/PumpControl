@@ -115,7 +115,7 @@
             </div>
         </div>
     </div>
-
+{% if current_user.has_role(UserRole.ADMINISTRATOR) %}
     <!-- GPIO Debug Card -->
     <div class="card">
         <div class="card-header">
@@ -150,7 +150,9 @@
             </div>
         </div>
     </div>
+{% endif %}
 </div>
+
 {% if current_user.has_role(UserRole.ADMINISTRATOR) %}
 <div class="card mt-4">
     <div class="card-header bg-warning">
@@ -179,10 +181,6 @@
 </div>
 {% endif %}
 
-{% if current_user.has_role(UserRole.ADMINISTRATOR) %}
-<!-- GPIO Configuration Section (Admin Only) -->
-
-{% endif %}
 
 <!-- Mode Change Confirmation Modal -->
 <div class="modal fade" id="modeConfirmModal" tabindex="-1">

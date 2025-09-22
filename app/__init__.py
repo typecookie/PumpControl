@@ -6,6 +6,7 @@ from .controllers import Controller
 from .utils.user_manager import UserManager
 from .routes.alert_routes import bp as alerts_api_bp
 from .routes.alerts_config import bp as alerts_config_ui_bp
+from .routes.diagnostic_routes import diagnostics_bp
 
 # Initialize singleton controller
 pump_controller = PumpController()
@@ -39,13 +40,16 @@ def create_app():
         from .routes.api_routes import bp as api_bp
         from .routes.auth_routes import bp as auth_bp
 
+
         app.register_blueprint(main_bp)
         app.register_blueprint(api_bp, url_prefix='/api')
         app.register_blueprint(auth_bp, url_prefix='/auth')
-        
+
         # Alert related blueprints
         app.register_blueprint(alerts_api_bp, url_prefix='/api/alerts')  # API endpoints for alerts
         app.register_blueprint(alerts_config_ui_bp, name='alert_config')  # UI routes for alert configuration
+
+        app.register_blueprint(diagnostics_bp, url_prefix='/api/diagnostics')
 
     return app
 
