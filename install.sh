@@ -1,56 +1,128 @@
 #!/bin/bash
 
-# Installation script for Pump Control System
-# For Raspberry Pi running Raspbian
+# PumpControl Installation Script
+# Simple script to install the PumpControl system to /opt/pump-control
 
 # Exit on any error
-set -e 
+set -e
 
-# Get current user
-CURRENT_USER=$(whoami)
-if [ "$CURRENT_USER" = "root" ]; then
-    echo "Please run this script as a non-root user with sudo privileges"
-    exit 1
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run this script with sudo or as root"
+  exit 1
 fi
 
-# Function to perform common setup tasks
-setup_environment() {
-    echo "Setting up environment..."
-    
-    # Create necessary directories
-    sudo mkdir -p /opt/pump-control/{logs,venv}
-    sudo mkdir -p /home/$CURRENT_USER/.pump_control
-    
-    # Set correct ownership
-    sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/pump-control
-    sudo chown -R $CURRENT_USER:$CURRENT_USER /home/$CURRENT_USER/.pump_control
-    
-    # Setup Python virtual environment if it doesn't exist
-    if [ ! -f "/opt/pump-control/venv/bin/activate" ]; then
-        echo "Creating new virtual environment..."
-        python3 -m venv /opt/pump-control/venv
-    fi
-    
-    # Activate virtual environment
-    source /opt/pump-control/venv/bin/activate
-    
-    # Update pip and install requirements
-    pip install --upgrade pip
-    pip install \
-        flask \
-        flask-login \
-        flask-sqlalchemy \
-        gunicorn \
-        requests \
-        RPi.GPIO
-}
+# Configuration variables
+INSTALL_DIR="/opt/pump-control"
+LOG_DIR="$INSTALL_DIR/logs"
+CONFIG_DIR="/etc/pump-control"
+SERVICE_NAME="pump-control"
+REPO_URL="https://github.com/typecookie/PumpControl.git"
+ACTUAL_USER=$(logname || whoami)
+BACKUP_DIR="$INSTALL_DIR/backups"
 
-# Function to configure nginx
-setup_nginx() {
-    echo "Configuring nginx..."
-    
-    # Create nginx configuration
-    sudo tee /etc/nginx/sites-available/pump-control << EOF
+echo "User: $ACTUAL_USER"
+
+# Install dependencies
+echo "Installing dependencies..."
+apt-get update
+apt-get install -y python3 python3-pip python3-venv git nginx rsync
+
+# Create directories
+echo "Creating directories..."
+mkdir -p "$INSTALL_DIR"
+mkdir -p "$LOG_DIR"
+mkdir -p "$BACKUP_DIR"
+mkdir -p "/home/$ACTUAL_USER/.pump_control"
+
+# Set permissions
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "$INSTALL_DIR"
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "/home/$ACTUAL_USER/.pump_control"
+
+# Clone repository
+echo "Cloning repository..."
+if [ -d "$INSTALL_DIR/.git" ]; then
+  echo "Repository exists, backing up and updating..."
+  
+  # Create backup directory with timestamp
+  TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+  BACKUP_PATH="$BACKUP_DIR/pump-control-backup-$TIMESTAMP"
+  mkdir -p "$BACKUP_DIR"
+  
+  # Create backup
+  rsync -a --exclude 'venv' --exclude 'logs' --exclude 'backups' --exclude '.git' \
+    "$INSTALL_DIR/" "$BACKUP_PATH/"
+  
+  # Backup venv if it exists
+  if [ -d "$INSTALL_DIR/venv" ]; then
+    mv "$INSTALL_DIR/venv" "/tmp/pump-control-venv-temp"
+  fi
+  
+  # Clean directory but preserve logs
+  mv "$LOG_DIR" "/tmp/pump-control-logs-temp"
+  rm -rf "$INSTALL_DIR"/*
+  
+  # Clone fresh copy to temporary location
+  git clone "$REPO_URL" "/tmp/pump-control-git-temp"
+  
+  # Copy repository files
+  cp -r "/tmp/pump-control-git-temp"/* "$INSTALL_DIR/"
+  
+  # Restore logs and venv
+  mkdir -p "$LOG_DIR"
+  if [ -d "/tmp/pump-control-logs-temp" ]; then
+    cp -r "/tmp/pump-control-logs-temp"/* "$LOG_DIR/"
+    rm -rf "/tmp/pump-control-logs-temp"
+  fi
+  
+  if [ -d "/tmp/pump-control-venv-temp" ]; then
+    mv "/tmp/pump-control-venv-temp" "$INSTALL_DIR/venv"
+  fi
+  
+  # Cleanup temporary directory
+  rm -rf "/tmp/pump-control-git-temp"
+else
+  echo "Fresh installation..."
+  # For a fresh installation, just clone directly
+  # First, backup existing content if any
+  if [ "$(ls -A $INSTALL_DIR)" ]; then
+    TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+    BACKUP_PATH="$BACKUP_DIR/pre-install-$TIMESTAMP"
+    mkdir -p "$BACKUP_PATH"
+    mv "$INSTALL_DIR"/* "$BACKUP_PATH/" 2>/dev/null || true
+  fi
+  
+  # Clone repository to temp and copy
+  git clone "$REPO_URL" "/tmp/pump-control-git-temp"
+  cp -r "/tmp/pump-control-git-temp"/* "$INSTALL_DIR/"
+  rm -rf "/tmp/pump-control-git-temp"
+fi
+
+# Setup Python virtual environment
+echo "Setting up Python virtual environment..."
+if [ ! -d "$INSTALL_DIR/venv" ]; then
+  python3 -m venv "$INSTALL_DIR/venv"
+fi
+
+# Install Python dependencies
+source "$INSTALL_DIR/venv/bin/activate"
+pip install --upgrade pip
+if [ -f "$INSTALL_DIR/requirements.txt" ]; then
+  pip install -r "$INSTALL_DIR/requirements.txt"
+else
+  echo "requirements.txt not found, installing core dependencies..."
+  pip install flask flask-login flask-sqlalchemy gunicorn requests
+  
+  # Install RPi.GPIO if on a Raspberry Pi
+  if grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null; then
+    pip install RPi.GPIO
+  fi
+fi
+deactivate
+
+# Configure nginx
+echo "Configuring nginx..."
+cat > /etc/nginx/sites-available/pump-control << EOF
 server {
     listen 80;
     server_name _;
@@ -58,169 +130,153 @@ server {
     proxy_connect_timeout 75s;
     proxy_read_timeout 300s;
 
-    access_log /opt/pump-control/logs/nginx-access.log;
-    error_log /opt/pump-control/logs/nginx-error.log;
+    access_log ${LOG_DIR}/nginx-access.log;
+    error_log ${LOG_DIR}/nginx-error.log;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_buffering off;
 
         # WebSocket support
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
-
-        # Debug headers
-        proxy_set_header X-Original-Request-Time $request_time;
-        proxy_set_header X-Server-Time $time_local;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 
     location /static/ {
-        root /opt/pump-control/app/app/;
+        root ${INSTALL_DIR}/app/;
         add_header Cache-Control "public, no-transform";
-
     }
 }
-
 EOF
 
-    # Enable site and remove default
-    sudo ln -sf /etc/nginx/sites-available/pump-control /etc/nginx/sites-enabled/
-    sudo rm -f /etc/nginx/sites-enabled/default
-}
+# Enable site
+ln -sf /etc/nginx/sites-available/pump-control /etc/nginx/sites-enabled/
 
-# Function to setup systemd service
-setup_systemd() {
-    echo "Setting up systemd service..."
-    
-    sudo tee /etc/systemd/system/pump-control.service << EOF
+# Remove default site if it exists
+if [ -f /etc/nginx/sites-enabled/default ]; then
+  rm /etc/nginx/sites-enabled/default
+fi
+
+# Configure systemd service
+echo "Configuring systemd service..."
+cat > /etc/systemd/system/pump-control.service << EOF
 [Unit]
 Description=Pump Control System
 After=network.target
 
 [Service]
 Type=simple
-User=$CURRENT_USER
-Group=$CURRENT_USER
-WorkingDirectory=/opt/pump-control/app
-Environment="PATH=/opt/pump-control/venv/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/opt/pump-control/app"
+User=${ACTUAL_USER}
+Group=${ACTUAL_USER}
+WorkingDirectory=${INSTALL_DIR}
+Environment="PATH=${INSTALL_DIR}/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=${INSTALL_DIR}"
 Environment="FLASK_APP=app"
 Environment="FLASK_ENV=production"
-ExecStart=/opt/pump-control/venv/bin/gunicorn --config /opt/pump-control/app/gunicorn_config.py 'app:create_app()'
-Restart=on-failure
+ExecStart=${INSTALL_DIR}/venv/bin/gunicorn --config ${INSTALL_DIR}/gunicorn_config.py 'app:create_app()'
+Restart=always
 RestartSec=5
-StandardOutput=append:/opt/pump-control/logs/gunicorn.log
-StandardError=append:/opt/pump-control/logs/gunicorn.err
+StandardOutput=append:${LOG_DIR}/gunicorn.log
+StandardError=append:${LOG_DIR}/gunicorn.err
 
 [Install]
 WantedBy=multi-user.target
 EOF
-}
 
-# Function to setup log files
-setup_logs() {
-    echo "Setting up log files..."
-    
-    # Create log files
-    sudo touch /opt/pump-control/logs/{nginx-access,nginx-error,gunicorn,error}.log
-    
-    # Set permissions
-    sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/pump-control/logs
-    sudo chmod 755 /opt/pump-control/logs
-    sudo chmod 644 /opt/pump-control/logs/*.log
-}
+# Setup log files
+echo "Setting up log files..."
+touch "$LOG_DIR/nginx-access.log"
+touch "$LOG_DIR/nginx-error.log"
+touch "$LOG_DIR/gunicorn.log"
+touch "$LOG_DIR/gunicorn.err"
+touch "$LOG_DIR/error.log"
 
-# Function to create maintenance scripts
-create_maintenance_scripts() {
-    echo "Creating maintenance scripts..."
-    
-    # Create fix-permissions script
-    sudo tee /opt/pump-control/fix-permissions.sh << EOF
+# Set permissions
+chmod 755 "$LOG_DIR"
+chmod 644 "$LOG_DIR"/*.log
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "$LOG_DIR"
+chown -R "$ACTUAL_USER:$ACTUAL_USER" "$INSTALL_DIR"
+
+# Create helper scripts
+echo "Creating helper scripts..."
+
+# Fix permissions script
+cat > "$INSTALL_DIR/fix-permissions.sh" << EOF
 #!/bin/bash
-sudo chown -R $CURRENT_USER:$CURRENT_USER /opt/pump-control
-sudo chmod 755 /opt/pump-control/logs
-sudo chmod 644 /opt/pump-control/logs/*.log
+sudo chown -R ${ACTUAL_USER}:${ACTUAL_USER} ${INSTALL_DIR}
+sudo chmod 755 ${LOG_DIR}
+sudo chmod 644 ${LOG_DIR}/*.log
+echo "Permissions fixed!"
 EOF
-    sudo chmod +x /opt/pump-control/fix-permissions.sh
+chmod +x "$INSTALL_DIR/fix-permissions.sh"
 
-    # Create restart script
-    sudo tee /opt/pump-control/restart.sh << EOF
+# Restart script
+cat > "$INSTALL_DIR/restart.sh" << EOF
 #!/bin/bash
 echo "Restarting services..."
 sudo systemctl restart nginx pump-control
 echo "Service status:"
-sudo systemctl status pump-control
+sudo systemctl status pump-control --no-pager
 EOF
-    sudo chmod +x /opt/pump-control/restart.sh
+chmod +x "$INSTALL_DIR/restart.sh"
 
-    # Create update script
-    sudo tee /opt/pump-control/update.sh << EOF
+# Update script
+cat > "$INSTALL_DIR/update.sh" << EOF
 #!/bin/bash
-cd /opt/pump-control/app
+cd ${INSTALL_DIR}
+echo "Creating backup..."
+TIMESTAMP=\$(date +"%Y%m%d-%H%M%S")
+BACKUP_PATH="${BACKUP_DIR}/pump-control-backup-\$TIMESTAMP"
+mkdir -p "${BACKUP_DIR}"
+rsync -a --exclude 'venv' --exclude 'logs' --exclude 'backups' --exclude '.git' "${INSTALL_DIR}/" "\$BACKUP_PATH/"
+
+echo "Updating repository..."
 git pull
-source /opt/pump-control/venv/bin/activate
+
+echo "Updating dependencies..."
+source ${INSTALL_DIR}/venv/bin/activate
 pip install -r requirements.txt
+deactivate
+
+echo "Restarting service..."
 sudo systemctl restart pump-control
-echo "Update complete"
+echo "Update complete!"
 EOF
-    sudo chmod +x /opt/pump-control/update.sh
-}
+chmod +x "$INSTALL_DIR/update.sh"
 
-# Main installation function
-install() {
-    echo "Starting Pump Control System installation as user: $CURRENT_USER"
-    
-    # Update system and install dependencies
-    echo "Updating system and installing dependencies..."
-    sudo apt-get update
-    sudo apt-get upgrade -y
-    sudo apt-get install -y python3 python3-pip python3-venv git nginx
-    
-    # Copy current directory contents to installation directory
-    echo "Installing application files..."
-    sudo mkdir /opt/pump-control
-    sudo cp -r . /opt/pump-control/app
-    
-    # Run setup functions
-    setup_environment
-    setup_nginx
-    setup_systemd
-    setup_logs
-    create_maintenance_scripts
-    
-    # Add user to gpio group if it exists
-    if getent group gpio > /dev/null; then
-        echo "Adding user to gpio group..."
-        sudo usermod -a -G gpio $CURRENT_USER
-    fi
-    
-    # Enable and start services
-    echo "Starting services..."
-    sudo systemctl daemon-reload
-    sudo systemctl enable pump-control nginx
-    sudo systemctl restart nginx pump-control
-    
-    echo "Installation complete!"
-    echo "Available management scripts:"
-    echo "- Fix permissions: /opt/pump-control/fix-permissions.sh"
-    echo "- Restart services: /opt/pump-control/restart.sh"
-    echo "- Update application: /opt/pump-control/update.sh"
-    echo ""
-    echo "To check service status: sudo systemctl status pump-control"
-}
+# Set ownership for scripts
+chown "$ACTUAL_USER:$ACTUAL_USER" "$INSTALL_DIR"/*.sh
 
-# Check if this is an update
-if [ -d "/opt/pump-control" ]; then
-    echo "Existing installation detected. Updating..."
-    setup_environment
-    sudo cp -r . /opt/pump-control/app
-    sudo systemctl restart pump-control
-    echo "Update complete!"
-else
-    install
+# Add user to gpio group if we're on a Raspberry Pi
+if grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null; then
+  if getent group gpio > /dev/null; then
+    echo "Adding user to gpio group..."
+    usermod -a -G gpio "$ACTUAL_USER"
+  fi
 fi
+
+# Enable and start services
+echo "Enabling and starting services..."
+systemctl daemon-reload
+systemctl enable pump-control
+systemctl restart nginx
+systemctl restart pump-control || echo "Note: pump-control service failed to start. This may be normal if configuration is incomplete."
+
+echo ""
+echo "==================================================="
+echo "PumpControl installation complete!"
+echo ""
+echo "Installation directory: $INSTALL_DIR"
+echo ""
+echo "Available management scripts:"
+echo "- Fix permissions: $INSTALL_DIR/fix-permissions.sh"
+echo "- Restart services: $INSTALL_DIR/restart.sh"
+echo "- Update application: $INSTALL_DIR/update.sh"
+echo ""
+echo "To check service status: sudo systemctl status pump-control"
+echo "==================================================="
