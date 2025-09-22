@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h2 class="mb-0">Pump Configuration</h2>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h3>Well Pump</h3>
+                                <div class="mb-3">
+                                    <label for="well_pump_gpm" class="form-label">Flow Rate (GPM)</label>
+                                    <div class="input-group">
+                                        <input type="number" 
+                                              class="form-control" 
+                                              id="well_pump_gpm" 
+                                              name="well_pump_gpm" 
+                                              value="{{ pump_config.well_pump_gpm }}"
+                                              min="0.1"
+                                              step="0.1"
+                                              required>
+                                        <span class="input-group-text">GPM</span>
+                                    </div>
+                                    <small class="text-muted">Gallons per minute for the well pump</small>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <h3>Distribution Pump</h3>
+                                <div class="mb-3">
+                                    <label for="dist_pump_gpm" class="form-label">Flow Rate (GPM)</label>
+                                    <div class="input-group">
+                                        <input type="number" 
+                                              class="form-control" 
+                                              id="dist_pump_gpm" 
+                                              name="dist_pump_gpm" 
+                                              value="{{ pump_config.dist_pump_gpm }}"
+                                              min="0.1"
+                                              step="0.1"
+                                              required>
+                                        <span class="input-group-text">GPM</span>
+                                    </div>
+                                    <small class="text-muted">Gallons per minute for the distribution pump</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('stats.stats_dashboard') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Stats
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Save Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

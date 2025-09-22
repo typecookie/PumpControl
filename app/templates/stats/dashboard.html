@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">System Statistics</h1>
+    
+    <!-- Pump Configuration Summary -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h3 class="mb-0">Pump Configuration</h3>
+            {% if current_user.has_role(UserRole.OPERATOR) or current_user.has_role(UserRole.ADMINISTRATOR) %}
+            <a href="{{ url_for('stats.pump_config') }}" class="btn btn-sm btn-light">
+                <i class="fas fa-edit"></i> Edit
+            </a>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h4>Well Pump</h4>
+                    <p>Flow Rate: <strong>{{ pump_config.well_pump_gpm }}</strong> gallons per minute</p>
+                </div>
+                <div class="col-md-6">
+                    <h4>Distribution Pump</h4>
+                    <p>Flow Rate: <strong>{{ pump_config.dist_pump_gpm }}</strong> gallons per minute</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Pump Statistics -->
+    <div class="row">
+        <!-- Well Pump Stats -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white">
+                    <h3 class="mb-0">Well Pump Statistics</h3>
+                </div>
+                <div class="card-body">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th>Runtime</th>
+                                <th>Volume</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set well_stats = pump_stats.well_pump %}
+                            <tr>
+                                <td>Today</td>
+                                <td>{{ format_duration(well_stats.today.runtime) }}</td>
+                                <td>{{ format_volume(well_stats.today.volume) }}</td>
+                            </tr>
+                            <tr>
+                                <td>This Week</td>
+                                <td>{{ format_duration(well_stats.week.runtime) }}</td>
+                                <td>{{ format_volume(well_stats.week.volume) }}</td>
+                            </tr>
+                            <tr>
+                                <td>This Month</td>
+                                <td>{{ format_duration(well_stats.month.runtime) }}</td>
+                                <td>{{ format_volume(well_stats.month.volume) }}</td>
+                            </tr>
+                            <tr>
+                                <td>This Year</td>
+                                <td>{{ format_duration(well_stats.year.runtime) }}</td>
+                                <td>{{ format_volume(well_stats.year.volume) }}</td>
+                            </tr>
+                            <tr class="table-primary">
+                                <td>Total</td>
+                                <td>{{ format_duration(well_stats.total.runtime) }}</td>
+                                <td>{{ format_volume(well_stats.total.volume) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="mt-3">
+                        <strong>Last Active:</strong>
+                        {% if well_stats.last_active %}
+                            {{ format_timestamp(well_stats.last_active) }}
+                        {% else %}
+                            Never
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Distribution Pump Stats -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-info text-white">
+                    <h3 class="mb-0">Distribution Pump Statistics</h3>
+                </div>
+                <div class="card-body">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Period</th>
+                                <th>Runtime</th>
+                                <th>Volume</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set dist_stats = pump_stats.dist_pump %}
+                            <tr>
+                                <td>Today</td>
+                                <td>{{ format_duration(dist_stats.today.runtime) }}</td>
+                                <td>{{ format_volume(dist_stats.today.volume) }}</td>
+                            </tr>
+                            <tr>
+                                <td>This Week</td>
+                                <td>{{ format_duration(dist_stats.week.runtime) }}</td>
+                                <td>{{ format_volume(dist_stats.week.volume) }}</td>
+                            </tr>
+                            <tr>
+                                <td>This Month</td>
+                                <td>{{ format_duration(dist_stats.month.runtime) }}</td>
+                                <td>{{ format_volume(dist_stats.month.volume) }}</td>
+                            </tr>
+                            <tr>
+                                <td>This Year</td>
+                                <td>{{ format_duration(dist_stats.year.runtime) }}</td>
+                                <td>{{ format_volume(dist_stats.year.volume) }}</td>
+                            </tr>
+                            <tr class="table-primary">
+                                <td>Total</td>
+                                <td>{{ format_duration(dist_stats.total.runtime) }}</td>
+                                <td>{{ format_volume(dist_stats.total.volume) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="mt-3">
+                        <strong>Last Active:</strong>
+                        {% if dist_stats.last_active %}
+                            {{ format_timestamp(dist_stats.last_active) }}
+                        {% else %}
+                            Never
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tank States History -->
+    <div class="row">
+        <!-- Summer Tank History -->
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h3 class="mb-0">Summer Tank History</h3>
+                </div>
+                <div class="card-body">
+                    <div class="current-state mb-3">
+                        <h4>Current State: 
+                            <span class="badge bg-{{ get_state_color(current_tank_states.summer.state) }}">
+                                {{ current_tank_states.summer.state }}
+                            </span>
+                        </h4>
+                        <p>Duration: {{ format_duration(current_tank_states.summer.duration) }}</p>
+                    </div>
+                    
+                    <h5>Recent History</h5>
+                    {% if tank_history.summer %}
+                        <div class="table-responsive">
+                            <table class="table table-striped table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>State</th>
+                                        <th>Started</th>
+                                        <th>Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for entry in tank_history.summer %}
+                                    <tr>
+                                        <td>
+                                            <span class="badge bg-{{ get_state_color(entry.state) }}">
+                                                {{ entry.state }}
+                                            </span>
+                                        </td>
+                                        <td>{{ format_timestamp(entry.start_time) }}</td>
+                                        <td>{{ format_duration(entry.duration) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No history available</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Winter Tank History -->
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">Winter Tank History</h3>
+                </div>
+                <div class="card-body">
+                    <div class="current-state mb-3">
+                        <h4>Current State: 
+                            <span class="badge bg-{{ get_state_color(current_tank_states.winter.state) }}">
+                                {{ current_tank_states.winter.state }}
+                            </span>
+                        </h4>
+                        <p>Duration: {{ format_duration(current_tank_states.winter.duration) }}</p>
+                    </div>
+                    
+                    <h5>Recent History</h5>
+                    {% if tank_history.winter %}
+                        <div class="table-responsive">
+                            <table class="table table-striped table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>State</th>
+                                        <th>Started</th>
+                                        <th>Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for entry in tank_history.winter %}
+                                    <tr>
+                                        <td>
+                                            <span class="badge bg-{{ get_state_color(entry.state) }}">
+                                                {{ entry.state }}
+                                            </span>
+                                        </td>
+                                        <td>{{ format_timestamp(entry.start_time) }}</td>
+                                        <td>{{ format_duration(entry.duration) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No history available</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Refresh stats every 60 seconds
+    setTimeout(function() {
+        window.location.reload();
+    }, 60000);
+</script>
+{% endblock %}

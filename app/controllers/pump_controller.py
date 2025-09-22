@@ -5,6 +5,9 @@ from app.utils.config_utils import WELL_PUMP, DIST_PUMP
 from app.models.tank_state import TankState
 from app.controllers.interfaces import IPumpController
 from typing import Dict, Any
+# Add this to your imports
+from app.utils.stats_manager import StatsManager
+import time
 
 class PumpController(IPumpController):
     _instance = None
@@ -15,22 +18,33 @@ class PumpController(IPumpController):
             cls._instance._initialized = False
         return cls._instance
 
+    # Add the following in your PumpController class
     def __init__(self):
         if self._initialized:
             return
-            
+        
         try:
             # Initialize GPIO
             if not GPIOManager.initialize():
                 raise RuntimeError("Failed to initialize GPIO")
-            
+        
+            # Initialize stats manager
+            StatsManager.initialize()
+        
             self.running = False
             self.pump_thread = None
             self._last_state = None
             self._state_timestamp = 0
-            self.mode_controller = None  # Add this line
+            self.mode_controller = None
+        
+            # Add these lines for tracking last update time
+            self._last_well_update = time.time()
+            self._last_dist_update = time.time()
+            self._well_running = False
+            self._dist_running = False
+        
             self._initialized = True
-            
+        
         except Exception as e:
             print(f"Error initializing PumpController: {e}")
             raise
@@ -84,7 +98,7 @@ class PumpController(IPumpController):
         while self.running:
             try:
                 # Create current tank states based on mode
-                current_mode = self.mode_controller.get_current_mode()
+                current_mode = self.mode_controller.get_current_mode() if self.mode_controller else "WINTER"
                 print(f"\n=== Control Loop Iteration (Mode: {current_mode}) ===")
             
                 # Create the appropriate tank state based on mode
@@ -94,23 +108,43 @@ class PumpController(IPumpController):
                     tank_state = TankState('Winter')
                 
                 # Update the tank state from sensors
-                tank_state.update_from_sensors(GPIOManager)
                 print(f"Tank state created: name={tank_state.name}, state={tank_state.state}")
+            
+                # Update tank state history
+                StatsManager.update_tank_state(tank_state.name.lower(), tank_state.state)
             
                 # Let mode controller handle the logic
                 if self.mode_controller:
-                    print(f"Routing to {current_mode} mode handler")
                     self.mode_controller.handle_mode_controls(tank_state)
                 else:
                     print("Warning: No mode controller set")
 
+                # Get current pump states
+                current_well_running = self.get_well_pump_state()
+                current_dist_running = self.get_distribution_pump_state()
+                current_time = time.time()
+            
+                # Update well pump stats if state has changed or pump is running
+                if current_well_running != self._well_running or current_well_running:
+                    elapsed = current_time - self._last_well_update
+                    StatsManager.update_pump_stats('well_pump', self._well_running, elapsed)
+                    self._last_well_update = current_time
+                    self._well_running = current_well_running
+            
+                # Update distribution pump stats if state has changed or pump is running
+                if current_dist_running != self._dist_running or current_dist_running:
+                    elapsed = current_time - self._last_dist_update
+                    StatsManager.update_pump_stats('dist_pump', self._dist_running, elapsed)
+                    self._last_dist_update = current_time
+                    self._dist_running = current_dist_running
+
                 # Update cached state
                 current_state = {
                     'well_pump': {
-                        'state': 'ON' if self.get_well_pump_state() else 'OFF'
+                        'state': 'ON' if current_well_running else 'OFF'
                     },
                     'dist_pump': {
-                        'state': 'ON' if self.get_distribution_pump_state() else 'OFF'
+                        'state': 'ON' if current_dist_running else 'OFF'
                     }
                 }
                 self._last_state = current_state
@@ -220,6 +254,15 @@ class PumpController(IPumpController):
                         'tank_state': {'state': 'ERROR'}
                     }
 
+            # Get pump stats
+            pump_stats = {
+                'well_pump': StatsManager.get_pump_stats('well_pump'),
+                'dist_pump': StatsManager.get_pump_stats('dist_pump')
+            }
+
+            # Get pump configuration
+            pump_config = StatsManager.get_config()
+
             return {
                 'well_pump': {
                     'state': 'ON' if self.get_well_pump_state() else 'OFF'
@@ -227,7 +270,9 @@ class PumpController(IPumpController):
                 'distribution_pump': {
                     'state': 'ON' if self.get_distribution_pump_state() else 'OFF'
                 },
-                'thread_running': self.pump_thread.is_alive() if self.pump_thread else False
+                'thread_running': self.pump_thread.is_alive() if self.pump_thread else False,
+                'pump_stats': pump_stats,
+                'pump_config': pump_config
             }
 
         except Exception as e:

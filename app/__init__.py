@@ -8,6 +8,12 @@ from .routes.alert_routes import bp as alerts_api_bp
 from .routes.alerts_config import bp as alerts_config_ui_bp
 from .routes.diagnostic_routes import diagnostics_bp
 
+# Add to your existing imports
+from .utils.template_helpers import (
+    format_duration, format_volume, 
+    format_timestamp, get_state_color
+)
+
 # Initialize singleton controller
 pump_controller = PumpController()
 login_manager = LoginManager()
@@ -50,6 +56,19 @@ def create_app():
         app.register_blueprint(alerts_config_ui_bp, name='alert_config')  # UI routes for alert configuration
 
         app.register_blueprint(diagnostics_bp, url_prefix='/api/diagnostics')
+
+    @app.context_processor
+    def inject_template_helpers():
+        return {
+            'format_duration': format_duration,
+            'format_volume': format_volume,
+            'format_timestamp': format_timestamp,
+            'get_state_color': get_state_color
+        }
+
+    # Register the stats blueprint
+    from .routes.stats_routes import bp as stats_bp
+    app.register_blueprint(stats_bp)
 
     return app
 

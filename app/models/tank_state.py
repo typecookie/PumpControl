@@ -16,15 +16,10 @@ class TankState:
         self.summer_low = False
         self.summer_empty = False
         
-        self.stats = {
-            'today_runtime': 0,
-            'today_gallons': 0,
-            'week_runtime': 0,
-            'week_gallons': 0,
-            'month_runtime': 0,
-            'month_gallons': 0
-        }
-        self._load_stats()
+        # Initialize StatsManager to ensure it's ready
+        StatsManager.initialize()
+        
+        # No call to _load_stats() here - removed as it's no longer needed
 
     def update_from_sensors(self, gpio_manager):
         """Update tank state from sensors"""
@@ -57,8 +52,7 @@ class TankState:
             # Summer tank logic
             elif self.name == 'Summer':
                 print("\n=== Summer Tank State Update ===")
-                print(
-                    f"Raw sensor values - High: {self.summer_high}, Low: {self.summer_low}, Empty: {self.summer_empty}")
+                print(f"Raw sensor values - High: {self.summer_high}, Low: {self.summer_low}, Empty: {self.summer_empty}")
 
                 # State determination for summer tank
                 if self.summer_high:
@@ -75,42 +69,35 @@ class TankState:
                 print(f"Computed state: {self.state}")
                 print("=== End Summer Tank Update ===\n")
 
+            # Update tank state history in StatsManager
+            StatsManager.update_tank_state(self.name.lower(), self.state)
+            
         except Exception as e:
             print(f"Error updating tank state: {e}")
             import traceback
             print(traceback.format_exc())
             self.state = 'ERROR'
 
-    def _load_stats(self):
-        """Load saved statistics"""
-        summer_stats, winter_stats = StatsManager.load_stats()
-        if self.name == 'Summer':
-            if summer_stats:
-                self.stats.update(summer_stats)
-        elif self.name == 'Winter':
-            if winter_stats:
-                self.stats.update(winter_stats)
-
-    def save_stats(self):
-        """Save current statistics"""
-        current_summer_stats, current_winter_stats = StatsManager.load_stats()
-        if self.name == 'Summer':
-            StatsManager.save_stats(self.stats, current_winter_stats)
-        elif self.name == 'Winter':
-            StatsManager.save_stats(current_summer_stats, self.stats)
-
     def get_formatted_stats(self):
-        """Return formatted statistics"""
-        from app.utils.time_utils import TimeFormatter
-        return TimeFormatter.format_tank_stats(self.stats)
-
-    def update_stats(self, is_running):
-        """Update tank statistics"""
-        if is_running:
-            self.stats['today_runtime'] += 1
-            self.stats['today_gallons'] += 40/60  # Assuming 40 GPM flow rate
-            self.stats['week_runtime'] += 1
-            self.stats['week_gallons'] += 40/60
-            self.stats['month_runtime'] += 1
-            self.stats['month_gallons'] += 40/60
-            self.save_stats()
+        """Return formatted statistics from StatsManager"""
+        try:
+            # For backward compatibility, return a dict in the expected format
+            pump_type = 'well_pump'  # Default to well pump stats
+            stats = StatsManager.get_pump_stats(pump_type)
+            
+            if not stats:
+                return {}
+                
+            # Convert from StatsManager format to the old format
+            return {
+                'today_runtime': stats.get('today', {}).get('runtime', 0),
+                'today_gallons': stats.get('today', {}).get('volume', 0),
+                'week_runtime': stats.get('week', {}).get('runtime', 0),
+                'week_gallons': stats.get('week', {}).get('volume', 0),
+                'month_runtime': stats.get('month', {}).get('runtime', 0),
+                'month_gallons': stats.get('month', {}).get('volume', 0)
+            }
+        except Exception as e:
+            print(f"Error getting formatted stats: {e}")
+            return {}
+            

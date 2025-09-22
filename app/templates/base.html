@@ -31,6 +31,11 @@
                         </li>
                         {% endif %}
                     {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('stats.stats_dashboard') }}">
+                            <i class="fas fa-chart-bar"></i> Statistics
+                        </a>
+                    </li>
                 </ul>
                 <ul class="navbar-nav">
                     {% if current_user.is_authenticated %}

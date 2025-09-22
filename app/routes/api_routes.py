@@ -276,7 +276,7 @@ def get_mode_status():
             config = ConfigManager.get_config()
             status['mode_specific'] = {
                 'low_timeout': config.get('winter_low_timeout', 300),
-                'low_state_active': handler._low_state_start_time is not None if handler else False
+                'low_state_active': handler._low_state_time is not None if handler else False
             }
 
         return jsonify(status)

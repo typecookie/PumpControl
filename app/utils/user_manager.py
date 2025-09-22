@@ -109,3 +109,28 @@ class UserManager:
             cls.save_users()
             return True
         return False
+
+@classmethod
+def reset_password(cls, user_id, new_password):
+    """Reset a user's password"""
+    if user_id in cls._users:
+        user = cls._users[user_id]
+        user.password_hash = User.set_password(new_password)
+        cls.save_users()
+        return True
+    return False
+
+@classmethod
+def get_all_users(cls):
+    """Get all users"""
+    return list(cls._users.values())
+
+@classmethod
+def update_user_role(cls, user_id, new_role):
+    """Update a user's role"""
+    if user_id in cls._users:
+        user = cls._users[user_id]
+        user.role = new_role
+        cls.save_users()
+        return True
+    return False
