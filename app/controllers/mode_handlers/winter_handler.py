@@ -3,6 +3,7 @@ from app.utils.config_utils import ConfigManager
 from app.utils.notification_config import AlertType
 from .base_handler import BaseModeHandler
 from app.models.tank_state import TankState
+from app.utils.gpio_utils import GPIOManager
 
 
 class WinterModeHandler(BaseModeHandler):
@@ -36,27 +37,33 @@ class WinterModeHandler(BaseModeHandler):
             print(f"Tank state object: {tank_state}")
             print(f"Tank name: {tank_state.name}")
             print(f"Tank state value: {tank_state.state}")
+            print(f"Raw sensor values - High: {tank_state.winter_high}, Low: {tank_state.winter_low}")
             print(f"Last state: {self._last_state}")
             print(f"Pump started from low: {self._pump_started_from_low}")
         
-        # Ensure we're working with a valid tank state
+            # Ensure we're working with a valid tank state
             current_state = tank_state.state
             if current_state == 'unknown':
                 print("Warning: Unknown tank state, skipping control logic")
-                return
+                # Force an update of the sensors to try to get a valid state
+                tank_state.update_from_sensors(GPIOManager)
+                current_state = tank_state.state
+                if current_state == 'unknown':
+                    print("Still unknown after sensor update, aborting control logic")
+                    return
             
-        # Keep track of last state for state change detection
+            # Keep track of last state for state change detection
             if self._last_state != current_state:
                 print(f"State CHANGED from {self._last_state} to {current_state}")
                 self._last_state = current_state
             else:
                 print(f"State unchanged: {current_state}")
 
-        # Get current pump state
+            # Get current pump state
             current_pump_state = self.pump_controller.get_well_pump_state()
             print(f"Current pump state: {'ON' if current_pump_state else 'OFF'}")
 
-        # Handle pump control based on tank state
+            # Handle pump control based on tank state
             if current_state == 'LOW':
                 if not self._pump_started_from_low:
                     print("Tank LOW & pump not started - STARTING well pump")
@@ -100,7 +107,7 @@ class WinterModeHandler(BaseModeHandler):
                     }
                 )
         
-        # Verify final state
+            # Verify final state
             final_pump_state = self.pump_controller.get_well_pump_state()
             print(f"After processing, pump state: {'ON' if final_pump_state else 'OFF'}")
             print(f"Pump cycle active: {self._pump_started_from_low}")

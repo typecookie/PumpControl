@@ -31,11 +31,11 @@ class TankState:
             self.summer_low = gpio_manager.get_sensor_state(SUMMER_LOW)
             self.summer_empty = gpio_manager.get_sensor_state(SUMMER_EMPTY)
 
-            # Winter tank logic
+            # Debug raw sensor values
             if self.name == 'Winter':
                 print("\n=== Winter Tank State Update ===")
                 print(f"Raw sensor values - High: {self.winter_high}, Low: {self.winter_low}")
-
+                
                 # State determination
                 if self.winter_high:
                     self.state = 'HIGH'
@@ -44,28 +44,27 @@ class TankState:
                 elif self.winter_low and not self.winter_high:
                     self.state = 'MID'
                 else:
-                    self.state = 'ERROR'
-
+                    self.state = 'MID'  # Default to MID instead of ERROR to avoid lockup
+                    
                 print(f"Computed state: {self.state}")
                 print("=== End Winter Tank Update ===\n")
-
-            # Summer tank logic
+                
             elif self.name == 'Summer':
                 print("\n=== Summer Tank State Update ===")
                 print(f"Raw sensor values - High: {self.summer_high}, Low: {self.summer_low}, Empty: {self.summer_empty}")
-
-                # State determination for summer tank
+                
+                # State determination for summer tank - FIXED LOGIC
                 if self.summer_high:
                     self.state = 'HIGH'
-                elif self.summer_low and not self.summer_high:
+                elif self.summer_low:
                     self.state = 'MID'
-                elif self.summer_empty and not self.summer_low and not self.summer_high:
+                elif self.summer_empty:
+                    # If empty sensor is ON but low and high are OFF
                     self.state = 'LOW'
-                elif not self.summer_empty and not self.summer_low and not self.summer_high:
-                    self.state = 'EMPTY'
                 else:
-                    self.state = 'ERROR'
-
+                    # If all sensors are OFF
+                    self.state = 'EMPTY'
+                
                 print(f"Computed state: {self.state}")
                 print("=== End Summer Tank Update ===\n")
 
@@ -100,4 +99,3 @@ class TankState:
         except Exception as e:
             print(f"Error getting formatted stats: {e}")
             return {}
-            

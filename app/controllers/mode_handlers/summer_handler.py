@@ -2,6 +2,7 @@
 from .base_handler import BaseModeHandler
 from app.models.tank_state import TankState
 from app.utils.notification_config import AlertType
+from app.utils.gpio_utils import GPIOManager  # Add this import
 
 class SummerModeHandler(BaseModeHandler):
     def __init__(self, pump_controller, notification_service):
@@ -33,7 +34,17 @@ class SummerModeHandler(BaseModeHandler):
             # Get current states
             current_state = tank_state.state
             print(f"Summer tank state: {current_state}")
+            print(f"Raw sensor values - High: {tank_state.summer_high}, Low: {tank_state.summer_low}, Empty: {tank_state.summer_empty}")
             
+            # If state is unknown, try to update it
+            if current_state == 'unknown':
+                print("Warning: Unknown tank state, updating sensors")
+                tank_state.update_from_sensors(GPIOManager)
+                current_state = tank_state.state
+                if current_state == 'unknown':
+                    print("Still unknown after sensor update, aborting control logic")
+                    return
+        
             # Get pump states safely
             pump_states = self.pump_controller.get_pump_states()
             well_running = False

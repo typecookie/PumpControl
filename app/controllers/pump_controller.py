@@ -100,19 +100,21 @@ class PumpController(IPumpController):
                 # Create current tank states based on mode
                 current_mode = self.mode_controller.get_current_mode() if self.mode_controller else "WINTER"
                 print(f"\n=== Control Loop Iteration (Mode: {current_mode}) ===")
-            
+
                 # Create the appropriate tank state based on mode
                 if current_mode == "SUMMER":
                     tank_state = TankState('Summer')
                 else:
                     tank_state = TankState('Winter')
-                
-                # Update the tank state from sensors
+
+                # Update the tank state from sensors - Add this line to read GPIO pins
+                tank_state.update_from_sensors(GPIOManager)
+
                 print(f"Tank state created: name={tank_state.name}, state={tank_state.state}")
-            
+
                 # Update tank state history
                 StatsManager.update_tank_state(tank_state.name.lower(), tank_state.state)
-            
+
                 # Let mode controller handle the logic
                 if self.mode_controller:
                     self.mode_controller.handle_mode_controls(tank_state)
@@ -123,18 +125,18 @@ class PumpController(IPumpController):
                 current_well_running = self.get_well_pump_state()
                 current_dist_running = self.get_distribution_pump_state()
                 current_time = time.time()
-            
+
                 # Update well pump stats if state has changed or pump is running
                 if current_well_running != self._well_running or current_well_running:
                     elapsed = current_time - self._last_well_update
-                    StatsManager.update_pump_stats('well_pump', self._well_running, elapsed)
+                    StatsManager.update_pump_stats('well_pump', current_well_running, elapsed)
                     self._last_well_update = current_time
                     self._well_running = current_well_running
-            
+
                 # Update distribution pump stats if state has changed or pump is running
                 if current_dist_running != self._dist_running or current_dist_running:
                     elapsed = current_time - self._last_dist_update
-                    StatsManager.update_pump_stats('dist_pump', self._dist_running, elapsed)
+                    StatsManager.update_pump_stats('dist_pump', current_dist_running, elapsed)
                     self._last_dist_update = current_time
                     self._dist_running = current_dist_running
 
@@ -151,9 +153,10 @@ class PumpController(IPumpController):
                 self._state_timestamp = time.time()
 
                 # Log current system state
-                print(f"Current system state: well={current_state['well_pump']['state']}, dist={current_state['dist_pump']['state']}")
+                print(
+                    f"Current system state: well={current_state['well_pump']['state']}, dist={current_state['dist_pump']['state']}")
                 print("=== End Control Loop Iteration ===")
-        
+
                 time.sleep(1)
 
             except Exception as e:
@@ -263,6 +266,18 @@ class PumpController(IPumpController):
             # Get pump configuration
             pump_config = StatsManager.get_config()
 
+            # Create tank state objects to include in the response
+            summer_tank = TankState('Summer')
+            winter_tank = TankState('Winter')
+
+            # Update tank states from sensors
+            summer_tank.update_from_sensors(GPIOManager)
+            winter_tank.update_from_sensors(GPIOManager)
+
+            # Get stats for both tanks
+            summer_stats = summer_tank.get_formatted_stats()
+            winter_stats = winter_tank.get_formatted_stats()
+
             return {
                 'well_pump': {
                     'state': 'ON' if self.get_well_pump_state() else 'OFF'
@@ -272,7 +287,16 @@ class PumpController(IPumpController):
                 },
                 'thread_running': self.pump_thread.is_alive() if self.pump_thread else False,
                 'pump_stats': pump_stats,
-                'pump_config': pump_config
+                'pump_config': pump_config,
+                # Add tank state information
+                'summer_tank': {
+                    'state': summer_tank.state,
+                    'stats': summer_stats
+                },
+                'winter_tank': {
+                    'state': winter_tank.state,
+                    'stats': winter_stats
+                }
             }
 
         except Exception as e:
